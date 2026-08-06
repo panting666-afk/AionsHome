@@ -1529,17 +1529,19 @@ function loadSingleModelInto(kind) {
   var apiKeyId = kind === 'sentinel' ? 'sentinelApiKeyInput' : 'embeddingApiKeyInput';
   var sel = $(selectId);
   if (!sel) return;
+  // 优先保留用户当前在下拉框里选中的值；没选过时才用已保存的
   var saved = kind === 'sentinel' ? _sentinelModelSaved : _embeddingModelSaved;
+  var current = sel.value || saved;
   sel.innerHTML = '<option value="">加载中...</option>';
   var q = '?base_url=' + encodeURIComponent($(baseUrlId).value.trim())
     + '&api_key=' + encodeURIComponent($(apiKeyId).value.trim());
   fetch('/api/settings/custom-routes/models' + q).then(function(r) { return r.json(); }).then(function(d) {
     var models = (d.models || []).slice();
-    if (saved && models.indexOf(saved) === -1) models.push(saved);
+    if (current && models.indexOf(current) === -1) models.push(current);
     var html = '<option value="">选择模型</option>';
     models.forEach(function(m) { html += '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>'; });
     sel.innerHTML = html;
-    if (saved) sel.value = saved;
+    if (current) sel.value = current;
     if (!d.models || !d.models.length) {
       showToast((d.error ? '拉取失败：' + d.error : '没有获取到模型，请检查地址和 Key'));
     } else {
@@ -1547,10 +1549,10 @@ function loadSingleModelInto(kind) {
     }
   }).catch(function() {
     sel.innerHTML = '<option value="">拉取失败，请填地址和 Key 后重试</option>';
-    if (saved) {
+    if (current) {
       var opt = document.createElement('option');
-      opt.value = saved; opt.textContent = saved;
-      sel.appendChild(opt); sel.value = saved;
+      opt.value = current; opt.textContent = current;
+      sel.appendChild(opt); sel.value = current;
     }
   });
 }
