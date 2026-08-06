@@ -256,6 +256,19 @@ function stickerUrlByDesc(atts, desc) {
   const a = (atts || []).find(x => x && typeof x === 'object' && x.type === 'sticker' && x.desc === desc);
   return a ? a.url : null;
 }
+const _IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i;
+// 判断附件是否为普通图片（纯 URL 串 或 type=image / mime image/*）
+function isImageAttachment(a) {
+  if (typeof a === 'string') {
+    return _IMG_EXT_RE.test(a.split('?')[0].split('#')[0]);
+  }
+  if (!a || typeof a !== 'object') return false;
+  const t = String(a.type || a.mime_type || '').toLowerCase();
+  if (t.startsWith('image/') || t === 'image') return true;
+  if (t && t !== 'link_preview') return false; // sticker/voice/video_clip 等明确非图片
+  const url = a.url || '';
+  return _IMG_EXT_RE.test(url.split('?')[0].split('#')[0]);
+}
 // 新消息正文里保留 [表情包:描述] 标记 → 按原位置把贴纸穿插到气泡之间
 function renderMsgWithInlineStickers(content, atts) {
   const re = /\[表情包:([^\]]+)\]/g;
@@ -1944,6 +1957,7 @@ function renderMessages() {
     const displayContent = stripWishFulfillmentMarker(rawDisplayContent).trim();
     const hasVoiceAtt = messageAttachments.some(a => typeof a === 'object' && (a.type === 'voice' || a.type === 'video_clip'));
     const hasStickerAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'sticker');
+    const hasImageAtt = messageAttachments.some(isImageAttachment);
     const hasWishFulfillmentAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'wish_fulfillment');
     const hasDateSummaryAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'date_summary');
     const isEmptyMessage = !displayContent && messageAttachments.length === 0;
@@ -1979,6 +1993,18 @@ function renderMessages() {
         // 纯表情包：完全没有气泡
         bubblesHtml = renderAttachments(messageAttachments);
       }
+    } else if (hasImageAtt) {
+      // 图片消息：文字进气泡，图片本身不包气泡（裸图显示）
+      let textBubble = '';
+      if (displayContent.trim()) {
+        const mono = innerMonologueText(displayContent);
+        textBubble = (mono !== null || hasInnerMonologue(displayContent))
+          ? `<div class="msg-bubbles">${renderMsgPart(displayContent)}</div>`
+          : (parts.length > 1
+            ? '<div class="msg-bubbles">' + parts.map(renderMsgPart).join('') + '</div>'
+            : '<div class="msg-bubble">' + formatMsg(displayContent) + '</div>');
+      }
+      bubblesHtml = textBubble + renderAttachments(messageAttachments);
     } else if (parts.length > 1) {
       bubblesHtml = '<div class="msg-bubbles">' + parts.map(renderMsgPart).join('') + renderAttachments(messageAttachments) + '</div>';
     } else {

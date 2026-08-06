@@ -468,6 +468,7 @@ body[data-theme="light"] .monitor-camera-snapshot summary { background:rgba(0,0,
 .msg-row.user .msg-media { align-self:flex-end; margin-right:var(--user-link-preview-offset); }
 /* 用户发的表情包：不套用链接卡片的右偏移，紧贴气泡右缘 */
 .msg-row.user .msg-media:has(.sticker-item) { margin-right: 0; }
+.msg-row.user .msg-media:has(img) { margin-right: 0; }
 .msg-media img { max-width:260px; max-height:200px; border-radius:8px; cursor:pointer; }
 .msg-media img, .cr-inline-img { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .msg-media video { max-width:260px; max-height:200px; border-radius:8px; }

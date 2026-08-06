@@ -237,11 +237,12 @@ def _extract_reply_stickers(text: str, enabled: bool | None = None) -> tuple[str
     return text, atts
 
 
-def _push_new_ai_message(content: str):
-    """AI 回复生成后：若用户没有任何在线连接（App 未打开），发一条系统推送。"""
+def _push_new_ai_message(content: str, force: bool = False):
+    """AI 回复生成后：若用户没有任何在线连接（App 未打开），发一条系统推送。
+    force=True 时无视在线连接，强制推送（用于定时主动消息等需要锁屏提醒的场景）。"""
     try:
         from ws import manager
-        if manager.active:
+        if manager.active and not force:
             return
         from routes.push import send_web_push_async
         body = STICKER_CMD_PATTERN.sub("", content or "").strip().replace("\n", " ").replace("<meta>", "")[:120]

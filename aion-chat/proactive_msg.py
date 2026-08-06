@@ -102,13 +102,14 @@ async def send_proactive_message() -> dict:
     except Exception:
         mem_inject = []
 
-    # 触发 prompt：AI 可输出 [[SKIP]] 表示本轮不发
+    # 触发 prompt：每轮必发，自然回复，像平时聊天一样（可用换行分出多个气泡）
     now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
     trigger = (
         "[定时主动消息触发]\n"
         f"现在时间：{now_str}。这是你定时主动联系【{user_name}】的机会。\n"
-        "请自行判断：如果此刻不适合打扰，或没有值得说的话，只回复 [[SKIP]]；\n"
-        "否则用你自己的口吻发一条简短、自然、贴合当前时间/最近对话/记忆的主动消息（1-3 句话）。\n"
+        "请务必真的发一条消息，用你自己的口吻自然地回复：像平时聊天一样，可以是一两句，也可以是几句、"
+        "换行分成几个气泡，贴合当前时间/最近对话/记忆即可。\n"
+        "不许跳过、不许回复 [[SKIP]]，也不要以任何理由不开口——哪怕只说一句关心或吐槽也要说。\n"
         "不要输出 [MUSIC]、[ALARM]、[Monitor]、[REMINDER] 等系统指令，只说普通话语。"
     )
     messages = prefix + mem_inject + history + [{"role": "user", "content": trigger}]
@@ -159,4 +160,10 @@ async def send_proactive_message() -> dict:
         )
     except Exception as exc:
         return {"status": "error", "detail": f"save_exc:{exc}"}
+    # 触发 web push 系统推送（锁屏也能收到；force=True 无视在线连接）
+    try:
+        from routes.chat import _push_new_ai_message
+        _push_new_ai_message(full_text, force=True)
+    except Exception:
+        pass
     return {"status": "sent", "detail": conv_id}
