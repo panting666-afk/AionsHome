@@ -999,6 +999,39 @@ body[data-theme="light"] .ghost-btn {
       </div>
     </details>
 
+    <details class="settings-card">
+      <summary>
+        <div class="summary-title">
+          <strong>⏰ AI 主动消息定时</strong>
+          <span>每隔固定时间，让 AI 主动到私聊发一条消息</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body">
+        <label class="check-field">
+          <input type="checkbox" id="proactiveMsgEnabledInput">
+          启用 AI 主动消息
+        </label>
+        <p class="hint">到点后 AI 会根据当前时间、最近对话和记忆自行决定是否发消息；你近 10 分钟内刚发过消息会自动跳过，AI 觉得不合适时也会跳过（不会打扰）。</p>
+        <div class="settings-grid">
+          <div class="field full">
+            <label class="form-label">发送间隔</label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <select class="form-input" id="proactiveMsgIntervalInput" onchange="onProactiveIntervalChange()">
+                <option value="15">15 分钟</option>
+                <option value="30">30 分钟</option>
+                <option value="60">1 小时</option>
+                <option value="120">2 小时</option>
+                <option value="240">4 小时</option>
+                <option value="custom">自定义…</option>
+              </select>
+              <input class="form-input mono-input" type="number" id="proactiveMsgCustomInput" min="1" max="10080" placeholder="分钟" style="display:none;width:120px;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
     <details id="mediaCacheSection" class="settings-card" style="display:none">
       <summary>
         <div class="summary-title">
@@ -1895,6 +1928,8 @@ function collectCustomRoutes() {
   $("luckinLongitudeInput").value = s.luckin_default_longitude || "";
   $("luckinLatitudeInput").value = s.luckin_default_latitude || "";
   $("luckinShopKeywordInput").value = s.luckin_default_shop_keyword || "";
+  $("proactiveMsgEnabledInput").checked = !!s.proactive_msg_enabled;
+  hydrateProactiveInterval(s.proactive_msg_interval_min != null ? s.proactive_msg_interval_min : 60);
   customModelRoutes = normalizeRoutesForUi(s.custom_model_routes || []);
   renderCustomRoutes();
   loadSentinelModels();
@@ -1902,6 +1937,41 @@ function collectCustomRoutes() {
   refreshPhoneScreenStatus();
   refreshMediaCacheStatus();
 })();
+
+// ── AI 主动消息：间隔预设 / 自定义 ────────────────
+function hydrateProactiveInterval(minutes) {
+  var sel = $("proactiveMsgIntervalInput");
+  var custom = $("proactiveMsgCustomInput");
+  minutes = parseInt(minutes, 10) || 60;
+  if ([15, 30, 60, 120, 240].indexOf(minutes) !== -1) {
+    sel.value = String(minutes);
+    custom.style.display = "none";
+    custom.value = "";
+  } else {
+    sel.value = "custom";
+    custom.style.display = "";
+    custom.value = minutes;
+  }
+}
+
+function onProactiveIntervalChange() {
+  var sel = $("proactiveMsgIntervalInput");
+  var custom = $("proactiveMsgCustomInput");
+  if (sel.value === "custom") {
+    custom.style.display = "";
+    custom.focus();
+  } else {
+    custom.style.display = "none";
+    custom.value = "";
+  }
+}
+
+function currentProactiveIntervalMin() {
+  var sel = $("proactiveMsgIntervalInput");
+  var custom = $("proactiveMsgCustomInput");
+  var v = sel.value === "custom" ? parseInt(custom.value, 10) : parseInt(sel.value, 10);
+  return v > 0 ? v : 60;
+}
 
 async function saveSettings() {
   var customRoutes = [];
@@ -1929,7 +1999,9 @@ async function saveSettings() {
     luckin_default_longitude: $("luckinLongitudeInput").value.trim(),
     luckin_default_latitude: $("luckinLatitudeInput").value.trim(),
     luckin_default_shop_keyword: $("luckinShopKeywordInput").value.trim(),
-    custom_model_routes: customRoutes
+    custom_model_routes: customRoutes,
+    proactive_msg_enabled: $("proactiveMsgEnabledInput").checked,
+    proactive_msg_interval_min: currentProactiveIntervalMin()
   });
   customModelRoutes = normalizeRoutesForUi(customRoutes, collapsedState);
   renderCustomRoutes();

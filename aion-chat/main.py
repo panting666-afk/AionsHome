@@ -121,6 +121,32 @@ async def _auto_digest_loop():
             print(f"[auto_digest] ❌ 异常: {e}")
 
 
+async def _proactive_msg_loop():
+    """每 30 秒检查一次设置；到间隔且用户未活跃时，触发 AI 主动消息。"""
+    import time as _time
+    from config import SETTINGS
+    from proactive_msg import send_proactive_message
+    last_fire_ts = None  # None = 未启用过/刚启用 → 下一 tick 立即触发一次
+    while True:
+        await asyncio.sleep(30)
+        try:
+            enabled = SETTINGS.get("proactive_msg_enabled", False)
+            interval_min = int(SETTINGS.get("proactive_msg_interval_min", 60) or 0)
+            if not enabled or interval_min <= 0:
+                last_fire_ts = None
+                continue
+            now = _time.time()
+            if last_fire_ts is not None and (now - last_fire_ts) < interval_min * 60:
+                continue
+            last_fire_ts = now  # 触发前即记锚点，防止长生成导致连发
+            result = await send_proactive_message()
+            print(f"[proactive_msg] {result.get('status')}: {result.get('detail', '')}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[proactive_msg] ❌ 异常: {e}")
+
+
 async def _memory_maintenance_loop():
     """每天执行一次长期维护：备份 + 自动压缩 + VACUUM。错过当天会在开机后补跑。"""
     import time as _time
@@ -202,6 +228,8 @@ async def lifespan(app: FastAPI):
     openclaw_weixin_runtime.start()
     # 每日记忆维护（备份 + 自动压缩 + VACUUM）
     memory_maintenance_task = asyncio.create_task(_memory_maintenance_loop())
+    # AI 定时主动消息
+    proactive_msg_task = asyncio.create_task(_proactive_msg_loop())
     yield
     await openclaw_weixin_runtime.stop()
     await wechat_mode_dispatcher.stop()
@@ -212,6 +240,7 @@ async def lifespan(app: FastAPI):
     cr_digest_task.cancel()
     digest_task.cancel()
     memory_maintenance_task.cancel()
+    proactive_msg_task.cancel()
     fund_scheduler.stop()
     pc_display_tracker.stop()
     pc_tracker.stop()

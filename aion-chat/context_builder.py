@@ -406,7 +406,7 @@ async def build_memory_blocks(
         elif label == "chatroom_surfacing":
             surfaced, surfaced_ids = results[i]
         elif label == "main_recall":
-            _, main_candidates = results[i]
+            main_candidates, _ = results[i]
         elif label == "chatroom_recall":
             chatroom_mems = results[i]
 
@@ -430,7 +430,8 @@ async def build_memory_blocks(
     if recall_query:
         # 主记忆库
         if main_candidates:
-            recalled = [r for r in main_candidates if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
+            # 放宽后的召回结果（top10，软阈值），去掉硬编码 0.45 闸门
+            recalled = [r for r in main_candidates if r["id"] not in surfaced_ids][:10]
         # 聊天室记忆合并
         if chatroom_mems:
             seen_content = {m["content"][:100] for m in recalled}
@@ -438,7 +439,7 @@ async def build_memory_blocks(
                 if m.get("content", "")[:100] not in seen_content:
                     recalled.append(m)
                     seen_content.add(m["content"][:100])
-            recalled = recalled[:8]
+            recalled = recalled[:10]
 
     if recalled:
         mem_lines = format_recalled_memories_for_prompt(recalled, limit=200)
@@ -470,7 +471,7 @@ async def build_memory_blocks(
     debug_digest.update({
         "recall_query": recall_query,
         "recalled_memories": [_memory_debug_item(m) for m in recalled],
-        "debug_top6": [_memory_debug_item(m) for m in debug_candidates[:6]],
+        "debug_top6": [_memory_debug_item(m) for m in debug_candidates[:10]],
     })
 
     return {
@@ -528,10 +529,13 @@ def _is_timeline_image_attachment(attachment) -> bool:
 
 
 def _sanitize_timeline_content(content: str) -> str:
-    """清理合并时间线中的图片路径标记，完全移除（不保留占位符）。"""
+    """清理合并时间线中的图片路径/贴纸标记，完全移除（不保留占位符）。
+    贴纸信息由渲染层以"[说话人发送了表情包：xxx]"单独注入，原始标记不再进入 AI 上下文。"""
     if not content:
         return content
     cleaned = _CHATROOM_IMG_TAG_RE.sub('', content)
+    # 移除 [表情包:描述] 原始标记（贴纸信息已由发送方注解替代）
+    cleaned = re.sub(r'\[表情包:[^\]]*\]', '', cleaned)
     # 清理留下的多余空白和空行
     cleaned = re.sub(r'[ \t]+\n', '\n', cleaned)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)

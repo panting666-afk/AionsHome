@@ -59,6 +59,8 @@ class SettingsUpdate(BaseModel):
     luckin_default_latitude: Optional[str] = None
     luckin_default_shop_keyword: Optional[str] = None
     custom_model_routes: Optional[list[Dict[str, Any]]] = None
+    proactive_msg_enabled: Optional[bool] = None
+    proactive_msg_interval_min: Optional[int] = None
 
 class HomeLayoutUpdate(BaseModel):
     version: Optional[int] = 2
@@ -116,6 +118,8 @@ async def get_settings():
         "luckin_default_latitude": SETTINGS.get("luckin_default_latitude", ""),
         "luckin_default_shop_keyword": SETTINGS.get("luckin_default_shop_keyword", ""),
         "custom_model_routes": normalize_custom_model_routes(SETTINGS.get("custom_model_routes")),
+        "proactive_msg_enabled": SETTINGS.get("proactive_msg_enabled", False),
+        "proactive_msg_interval_min": int(SETTINGS.get("proactive_msg_interval_min", 60) or 60),
         "gemini_key_masked": mask(SETTINGS.get("gemini_key", "")),
         "siliconflow_key_masked": mask(SETTINGS.get("siliconflow_key", "")),
         "gemini_free_key_masked": mask(SETTINGS.get("gemini_free_key", "")),
@@ -176,6 +180,10 @@ async def update_settings(body: SettingsUpdate):
                 reload_login()
             except Exception:
                 pass
+    if body.proactive_msg_enabled is not None:
+        SETTINGS["proactive_msg_enabled"] = bool(body.proactive_msg_enabled)
+    if body.proactive_msg_interval_min is not None:
+        SETTINGS["proactive_msg_interval_min"] = max(0, int(body.proactive_msg_interval_min))
     save_settings(SETTINGS)
     if luckin_changed:
         try:

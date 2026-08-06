@@ -210,19 +210,26 @@ async function setupChatPushSubscription() {
 }
 
 function escHtml(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+// 内心旁白标记：兼容 [心里嘀咕：] [内心OS:] （心里嘀咕：） 【内心os：】 等常见变体
+const _MONOLOGUE_SRC = '[\\[（【(]\\s*(?:心里嘀咕|内心os|心里os|内心独白|内心旁白)[：:]\\s*([^\\]）】)]+?)[\\]）】)]';
+function _monologueRe(full) {
+  return full
+    ? new RegExp('^' + _MONOLOGUE_SRC + '$')
+    : new RegExp(_MONOLOGUE_SRC, 'gi');
+}
 function renderInnerMonologues(html) {
-  return String(html || '').replace(/\[心里嘀咕[：:]\s*([^\]]+?)\]/g, (_, content) =>
+  return String(html || '').replace(_monologueRe(), (_, content) =>
     `<span class="inner-monologue">${content.trim()}</span>`
   );
 }
 function innerMonologueText(s) {
-  const match = String(s || '').match(/^\s*\[心里嘀咕[：:]\s*([^\]]+?)\]\s*$/);
+  const match = String(s || '').match(_monologueRe(true));
   return match ? match[1].trim() : null;
 }
 function splitInnerMonologueParts(s) {
   const items = [];
   const text = String(s || '');
-  const monologueRe = /\[心里嘀咕[：:]\s*([^\]]+?)\]/g;
+  const monologueRe = _monologueRe();
   let last = 0;
   let match;
   while ((match = monologueRe.exec(text)) !== null) {
@@ -237,12 +244,38 @@ function splitInnerMonologueParts(s) {
   return items;
 }
 function hasInnerMonologue(s) {
-  return /\[心里嘀咕[：:]\s*[^\]]+?\]/.test(String(s || ''));
+  return _monologueRe().test(String(s || ''));
 }
 function renderMsgPart(p) {
   return splitInnerMonologueParts(p).map(item => {
     if (item.type === 'monologue') return `<div class="inner-monologue-line">${escHtml(item.text)}</div>`;
     return `<div class="msg-bubble">${formatMsg(item.text)}</div>`;
+  }).join('');
+}
+function stickerUrlByDesc(atts, desc) {
+  const a = (atts || []).find(x => x && typeof x === 'object' && x.type === 'sticker' && x.desc === desc);
+  return a ? a.url : null;
+}
+// 新消息正文里保留 [表情包:描述] 标记 → 按原位置把贴纸穿插到气泡之间
+function renderMsgWithInlineStickers(content, atts) {
+  const re = /\[表情包:([^\]]+)\]/g;
+  const items = [];
+  let last = 0, match;
+  while ((match = re.exec(content)) !== null) {
+    const before = content.slice(last, match.index).trim();
+    if (before) items.push({ type: 'text', text: before });
+    items.push({ type: 'sticker', desc: (match[1] || '').trim() });
+    last = re.lastIndex;
+  }
+  const tail = content.slice(last).trim();
+  if (tail) items.push({ type: 'text', text: tail });
+  return items.map(item => {
+    if (item.type === 'sticker') {
+      const url = stickerUrlByDesc(atts, item.desc);
+      if (!url) return '';
+      return `<div class="sticker-item"><img class="sticker-img" src="${escHtml(url)}" alt="${escHtml(item.desc)}" loading="lazy" ${imageInteractionAttrs()}></div>`;
+    }
+    return renderMsgPart(item.text);
   }).join('');
 }
 function renderBandVibrationNote(atts) {
@@ -288,6 +321,8 @@ function formatMsg(s) {
     lastIdx = imgRe.lastIndex;
   }
   result += processed.slice(lastIdx).replace(/\n/g, '<br>');
+  // 兜底：没有对应贴纸附件的 [表情包:...] 标记直接丢弃，避免漏出原文
+  result = result.replace(/\[表情包:[^\]]*\]/g, '');
   return renderInnerMonologues(result);
 }
 
@@ -1930,8 +1965,12 @@ function renderMessages() {
       bubblesHtml = `<div class="msg-bubble" style="background:transparent;padding:0;box-shadow:none;border:none">${renderAttachments(messageAttachments)}</div>`;
     } else if (hasStickerAtt) {
       // 表情包消息：不加气泡包裹，就显示表情图片本身
-      if (displayContent.trim()) {
-        // 有文字 + 表情包：文字正常气泡，表情包单独显示（无气泡）
+      const nonStickerAtts = messageAttachments.filter(a => !(a && typeof a === 'object' && a.type === 'sticker'));
+      if (displayContent.includes('[表情包:')) {
+        // 新消息：标记保留在正文 → 贴纸按原位置穿插在气泡之间
+        bubblesHtml = '<div class="msg-bubbles">' + renderMsgWithInlineStickers(displayContent, messageAttachments) + renderAttachments(nonStickerAtts) + '</div>';
+      } else if (displayContent.trim()) {
+        // 旧消息（无标记）：文字正常气泡，贴纸附在末尾
         const textBubble = parts.length > 1
           ? '<div class="msg-bubbles">' + parts.map(renderMsgPart).join('') + '</div>'
           : '<div class="msg-bubble">' + formatMsg(displayContent) + '</div>';
@@ -2261,13 +2300,12 @@ function renderSystemLogList() {
     if (d.recall_query) {
       detailHtml += `<h4>🔍 向量匹配查询</h4><div class="debug-recall-query">${escHtml(d.recall_query)}</div>`;
     }
-    // 得分最高的 Top6（含未达标）
+    // 得分最高的候选（软阈值，不再按 0.45 一刀切）
     if (d.debug_top6 && d.debug_top6.length > 0) {
-      const topItems = d.debug_top6.map((m, i) => {
-        const passed = m.score >= 0.45;
-        return `<div class="debug-mem-item ${passed ? '' : 'below-threshold'}"><span class="score">${m.score.toFixed(4)}</span><span class="score-detail">vec:${m.vec_sim.toFixed(3)} kw:${m.kw_score.toFixed(3)} imp:${m.importance.toFixed(2)}</span><span class="content">${escHtml(m.content)}</span>${!passed ? '<span class="threshold-tag">未达标</span>' : ''}</div>`;
-      }).join('');
-      detailHtml += `<h4>📊 记忆库 Top6 得分 (阈值 0.45)</h4>${topItems}`;
+      const topItems = d.debug_top6.map((m, i) =>
+        `<div class="debug-mem-item"><span class="score">${m.score.toFixed(4)}</span><span class="score-detail">vec:${m.vec_sim.toFixed(3)} kw:${m.kw_score.toFixed(3)} imp:${m.importance.toFixed(2)}</span><span class="content">${escHtml(m.content)}</span></div>`
+      ).join('');
+      detailHtml += `<h4>📊 记忆库得分 Top${d.debug_top6.length}（软阈值，达标即召回）</h4>${topItems}`;
     }
     if (d.recalled_memories && d.recalled_memories.length > 0) {
       const memItems = d.recalled_memories.map(m => `<div class="debug-mem-item"><span class="score">${m.score.toFixed(4)}</span><span class="type">${escHtml(m.type)}</span><span class="content">${escHtml(m.content)}</span></div>`).join('');
@@ -4199,7 +4237,7 @@ function renderAttachments(atts) {
     } else if (typeof item === 'object' && item.type === 'sticker') {
       const su = escHtml(item.url || '');
       const sd = escHtml(item.desc || '');
-      mediaHtml += `<div class="sticker-item"><img class="sticker-img" src="${su}" alt="${sd}" title="${sd}" loading="lazy" ${imageInteractionAttrs()}><span class="sticker-desc">${sd}</span></div>`;
+      mediaHtml += `<div class="sticker-item"><img class="sticker-img" src="${su}" alt="${sd}" title="${sd}" loading="lazy" ${imageInteractionAttrs()}></div>`;
     } else {
       const url = typeof item === 'string' ? item : (item && item.url ? item.url : '');
       if (/\.(mp4|webm|mov)$/i.test(url)) mediaHtml += `<video src="${escHtml(url)}" controls preload="metadata"></video>`;
@@ -5927,12 +5965,12 @@ async function importStickerTxt(gid, file) {
   } catch (e) { showToast('导入失败：' + e.message); }
 }
 
-// 点击面板外关闭
+// 点击面板外关闭（捕获阶段：在 tab 的 onclick 重渲染把按钮移出 DOM 之前判断，避免切分组时误关面板）
 document.addEventListener('click', e => {
   const p = $('stickerPanel');
   if (!p || p.hidden) return;
   if (!p.contains(e.target) && e.target !== $('stickerBtn')) closeStickerPanel();
-});
+}, true);
 
 
 // 轻量 toast（聊天页未加载 common.js，这里自给自足）

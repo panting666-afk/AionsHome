@@ -210,19 +210,19 @@ def _extract_mi_band_commands(text: str) -> tuple[str, list[str]]:
 
 
 def _extract_reply_stickers(text: str, enabled: bool | None = None) -> tuple[str, list]:
-    """[表情包:描述] → 解析为 sticker 附件，并从正文移除标记。
-    enabled=None 时按「AI 发表情包」开关判断；enabled=True/False 强制指定（用户自己发时不受 AI 开关限制）。"""
+    """[表情包:描述] → 解析为 sticker 附件；启用时保留标记在正文，前端按位置穿插渲染贴纸。
+    enabled=None 时按「AI 发表情包」开关判断；enabled=True/False 强制指定（用户自己发时不受 AI 开关限制）。
+    开关关闭时仍会剥掉标记，让贴纸完全消失。"""
     if not text:
         return text, []
     matches = STICKER_CMD_PATTERN.findall(text)
     if not matches:
         return text, []
-    cleaned = STICKER_CMD_PATTERN.sub("", text).strip()
     if enabled is None:
         from config import SETTINGS
         enabled = SETTINGS.get("ai_stickers_enabled", True)
     if not enabled:
-        return cleaned, []
+        return STICKER_CMD_PATTERN.sub("", text).strip(), []
     from routes.stickers import find_sticker_by_desc
     atts = []
     for desc in matches:
@@ -234,7 +234,7 @@ def _extract_reply_stickers(text: str, enabled: bool | None = None) -> tuple[str
                 "desc": sticker["desc"],
                 "group": sticker.get("group", ""),
             })
-    return cleaned, atts
+    return text, atts
 
 
 def _push_new_ai_message(content: str):
@@ -244,7 +244,7 @@ def _push_new_ai_message(content: str):
         if manager.active:
             return
         from routes.push import send_web_push_async
-        body = (content or "").strip().replace("\n", " ").replace("<meta>", "")[:120]
+        body = STICKER_CMD_PATTERN.sub("", content or "").strip().replace("\n", " ").replace("<meta>", "")[:120]
         send_web_push_async(
             load_worldbook().get("ai_name") or "AI",
             body or "给你发了条消息",
@@ -1201,7 +1201,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
             return await recall_memories(recall_query, query_keywords=recall_keywords)
         return [], []
 
-    (surfaced, surfaced_ids), (_, debug_top6) = await asyncio.gather(
+    (surfaced, surfaced_ids), (recall_matched, debug_top6) = await asyncio.gather(
         _do_surfacing(), _do_recall()
     )
 
@@ -1228,7 +1228,8 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     inject_offset += 2
 
     if recall_query:
-        recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
+        # 用放宽后的召回结果（top10，软阈值），去掉硬编码 0.45 闸门
+        recalled = [r for r in recall_matched if r["id"] not in surfaced_ids][:10]
         if (is_search_needed or digest_result.get("require_detail")) and recalled:
             detail_text = await fetch_source_details(recalled, recall_keywords)
 
@@ -1845,7 +1846,7 @@ async def send_message(conv_id: str, body: MsgCreate):
                 return await recall_memories(recall_query, query_keywords=recall_keywords)
             return [], []
 
-        (surfaced, surfaced_ids), (_, debug_top6) = await asyncio.gather(
+        (surfaced, surfaced_ids), (recall_matched, debug_top6) = await asyncio.gather(
             _do_surfacing(), _do_recall()
         )
 
@@ -1874,7 +1875,7 @@ async def send_message(conv_id: str, body: MsgCreate):
 
         # 4. RAG 精确召回（与背景记忆去重，使用已并行获取的结果）
         if recall_query:
-            recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
+            recalled = [r for r in recall_matched if r["id"] not in surfaced_ids][:10]
             # 如果需要补充记忆证据
             if (is_search_needed or digest_result.get("require_detail")) and recalled:
                 detail_text = await fetch_source_details(recalled, recall_keywords)
@@ -3066,12 +3067,12 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         )
 
         if recall_query:
-            _, debug_top6 = await recall_memories(recall_query, query_keywords=recall_keywords)
+            recall_matched, debug_top6 = await recall_memories(recall_query, query_keywords=recall_keywords)
         else:
-            debug_top6 = []
+            recall_matched, debug_top6 = [], []
 
         if recall_query:
-            recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
+            recalled = [r for r in recall_matched if r["id"] not in surfaced_ids][:10]
             if (is_search_needed or digest_result.get("require_detail")) and recalled:
                 detail_text = await fetch_source_details(recalled, recall_keywords)
 

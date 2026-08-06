@@ -2662,7 +2662,7 @@ function crBubbleParts(raw, isUser = false) {
 
 function crMessageContentItems(raw, isUser = false) {
   const items = [];
-  const monologueRe = /\[心里嘀咕[：:]\s*([^\]]+?)\]/g;
+  const monologueRe = _monologueRe();
   for (const part of crBubbleParts(raw, isUser)) {
     let last = 0;
     let match;
@@ -6138,14 +6138,21 @@ function esc(str) {
   return div.innerHTML;
 }
 
+// 内心旁白标记：兼容 [心里嘀咕：] [内心OS:] （心里嘀咕：） 【内心os：】 等常见变体
+const _MONOLOGUE_SRC = '[\\[（【(]\\s*(?:心里嘀咕|内心os|心里os|内心独白|内心旁白)[：:]\\s*([^\\]）】)]+?)[\\]）】)]';
+function _monologueRe(full) {
+  return full
+    ? new RegExp('^' + _MONOLOGUE_SRC + '$')
+    : new RegExp(_MONOLOGUE_SRC, 'gi');
+}
 function crRenderInnerMonologues(html) {
-  return String(html || '').replace(/\[心里嘀咕[：:]\s*([^\]]+?)\]/g, (_, content) =>
+  return String(html || '').replace(_monologueRe(), (_, content) =>
     `<span class="inner-monologue">${content.trim()}</span>`
   );
 }
 
 function crInnerMonologueText(s) {
-  const match = String(s || '').match(/^\s*\[心里嘀咕[：:]\s*([^\]]+?)\]\s*$/);
+  const match = String(s || '').match(_monologueRe(true));
   return match ? match[1].trim() : null;
 }
 

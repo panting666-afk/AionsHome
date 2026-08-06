@@ -2,12 +2,13 @@
 向量记忆库：embedding、recall、手动总结、即时哨兵（RAG 路由）
 """
 
-import json, time, struct, math, asyncio, re
+import json, time, struct, math, asyncio, re, hashlib
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import aiosqlite, httpx
 
-from config import get_key, get_sentinel_config, get_embedding_config, load_worldbook, save_chat_status, load_digest_anchor, save_digest_anchor, DEFAULT_MODEL
+from config import DATA_DIR, get_key, get_sentinel_config, get_embedding_config, load_worldbook, save_chat_status, load_digest_anchor, save_digest_anchor, DEFAULT_MODEL
 from database import get_db
 from model_json import extract_json_object
 from ws import manager
@@ -238,37 +239,103 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+# ── embedding 缓存：同一段文本不重复请求，缓解接口慢 / 慢网 ──
+_EMBED_CACHE_FILE = Path(DATA_DIR) / "embedding_cache.json"
+_EMBED_CACHE_MAX = 800
+_embedding_cache: dict[str, list[float]] = {}
+_embed_cache_save_counter = 0
+
+
+def _embed_cache_key(text: str, model: str, base_url: str) -> str:
+    return hashlib.md5(f"{base_url}|{model}|{text}".encode("utf-8")).hexdigest()
+
+
+def _load_embedding_cache():
+    global _embedding_cache
+    try:
+        if _EMBED_CACHE_FILE.exists():
+            data = json.loads(_EMBED_CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                _embedding_cache = {k: list(v) for k, v in data.items()}
+    except Exception:
+        _embedding_cache = {}
+
+
+def _save_embedding_cache():
+    global _embedding_cache, _embed_cache_save_counter
+    try:
+        _embed_cache_save_counter += 1
+        if _embed_cache_save_counter < 10:
+            return  # 每 10 次新写入才落盘一次，避免频繁写大文件
+        items = list(_embedding_cache.items())
+        if len(items) > _EMBED_CACHE_MAX:
+            items = items[-_EMBED_CACHE_MAX:]
+            _embedding_cache = dict(items)
+        _EMBED_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _EMBED_CACHE_FILE.write_text(json.dumps(_embedding_cache), encoding="utf-8")
+        _embed_cache_save_counter = 0
+    except Exception:
+        pass
+
+
+def _cache_embedding(key: str, vec: list) -> list:
+    _embedding_cache[key] = list(vec)
+    _save_embedding_cache()
+    return vec
+
+
+_load_embedding_cache()
+
+
 async def get_embedding(text: str) -> list[float] | None:
     ecfg = get_embedding_config()
     if not ecfg["api_key"]:
         return None
+    cache_key = _embed_cache_key(text, ecfg.get("model", ""), ecfg.get("base_url", ""))
+    cached = _embedding_cache.get(cache_key)
+    if cached:
+        return list(cached)
     if ecfg["use_openai"]:
-        # OpenAI 兼容格式（硅基流动等）
+        # OpenAI 兼容格式（硅基流动等）。接口偶尔慢/限流，超时放大 + 失败自动重试一次。
         url = f"{ecfg['base_url']}/v1/embeddings"
         headers = {"Authorization": f"Bearer {ecfg['api_key']}", "Content-Type": "application/json"}
         body = {"model": ecfg["model"], "input": text}
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(url, json=body, headers=headers)
-                if resp.status_code != 200:
-                    print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}: {resp.text[:300]}")
-                    return None
-                return resp.json()["data"][0]["embedding"]
-        except Exception as e:
-            print(f"[Embedding] 调用异常: {e}")
-            return None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(url, json=body, headers=headers)
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}（第 {attempt + 1} 次）")
+                        await asyncio.sleep(1.0)
+                        continue
+                    if resp.status_code != 200:
+                        print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}: {resp.text[:300]}")
+                        return None
+                    return _cache_embedding(cache_key, resp.json()["data"][0]["embedding"])
+            except Exception as e:
+                print(f"[Embedding] 调用异常: {e}（第 {attempt + 1} 次）")
+                if attempt == 0:
+                    await asyncio.sleep(1.0)
+                    continue
+                return None
+        return None
     else:
         # Gemini 原生格式
         model = ecfg["model"]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={ecfg['api_key']}"
         body = {"content": {"parts": [{"text": text}]}}
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(url, json=body)
-                resp.raise_for_status()
-                return resp.json()["embedding"]["values"]
-        except Exception:
-            return None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(url, json=body)
+                    resp.raise_for_status()
+                    return _cache_embedding(cache_key, resp.json()["embedding"]["values"])
+            except Exception:
+                if attempt == 0:
+                    await asyncio.sleep(1.0)
+                    continue
+                return None
+        return None
 
 
 # ── 关键词匹配辅助 ──────────────────────
@@ -287,17 +354,31 @@ def _keyword_match_score(query_keywords: list[str], mem_keywords_json: str) -> f
     return hits / len(query_keywords)
 
 
+def _content_keyword_score(query_keywords: list[str], content: str) -> float:
+    """关键词在记忆正文里的命中率（用于无关键词标签 / 无向量时的兜底）。"""
+    if not query_keywords or not content:
+        return 0.0
+    content_lower = content.lower()
+    hits = 0
+    for qk in query_keywords:
+        qk = str(qk or "").strip().lower()
+        if qk and qk in content_lower:
+            hits += 1
+    return hits / len(query_keywords)
+
+
 # ── 记忆召回（向量 + 关键词 + 重要度 综合评分）────
 async def recall_memories(query_text: str, query_keywords: list[str] = None,
-                          top_k: int = 5, threshold: float = 0.45) -> tuple[list[dict], list[dict]]:
+                          top_k: int = 10, threshold: float = 0.45) -> tuple[list[dict], list[dict]]:
     """
-    综合评分 = 向量相似度×0.6 + 关键词命中率×0.3 + 重要度×0.1
-    threshold 为最终得分门槛。
-    返回 (matched, debug_top6): matched 为达标结果, debug_top6 为得分最高的前6条（含未达标）
+    综合评分 = 向量相似度×0.55 + 关键词命中率×0.3 + 重要度×0.15
+    召回策略：
+      - 向量不可用时自动降级为关键词召回（不再直接返回空）；
+      - 没有向量的记忆也参与关键词匹配；
+      - 阈值仅作软下限（最高放宽到 0.15），避免"差一点就被丢"。
+    返回 (matched, debug_top6)：matched 为分数最高的 top_k 条（含未达原阈值的）。
     """
     query_vec = await get_embedding(query_text)
-    if not query_vec:
-        return [], []
     if query_keywords is None:
         query_keywords = []
     async with get_db() as db:
@@ -305,17 +386,23 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
         cur = await db.execute(
             "SELECT id, content, type, created_at, source_conv, embedding, keywords, importance, "
             "source_start_ts, source_end_ts, source_msg_id, evidence_summary "
-            "FROM memories WHERE embedding IS NOT NULL "
-            "AND COALESCE(archive_state,'active')='active'"
+            "FROM memories WHERE COALESCE(archive_state,'active')='active'"
         )
         rows = await cur.fetchall()
     all_scored = []
     for row in rows:
-        mem_vec = _unpack_embedding(row["embedding"])
-        vec_sim = cosine_similarity(query_vec, mem_vec)
+        vec_sim = 0.0
+        if query_vec is not None and row["embedding"] is not None:
+            try:
+                mem_vec = _unpack_embedding(row["embedding"])
+                vec_sim = cosine_similarity(query_vec, mem_vec)
+            except Exception:
+                vec_sim = 0.0
         kw_score = _keyword_match_score(query_keywords, row["keywords"]) if query_keywords else 0.0
+        if kw_score == 0.0 and query_keywords:
+            kw_score = _content_keyword_score(query_keywords, row["content"])
         importance = float(row["importance"] or 0.5)
-        final_score = vec_sim * 0.6 + kw_score * 0.3 + importance * 0.1
+        final_score = vec_sim * 0.55 + kw_score * 0.3 + importance * 0.15
         item = {
             "id": row["id"], "content": row["content"], "type": row["type"],
             "created_at": row["created_at"],
@@ -333,8 +420,10 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
         item.update(_memory_time_payload(item))
         all_scored.append(item)
     all_scored.sort(key=lambda x: x["score"], reverse=True)
-    debug_top6 = all_scored[:6]
-    matched = [r for r in all_scored if r["score"] >= threshold][:top_k]
+    debug_top6 = all_scored[:10]
+    # 软下限：阈值最多放宽到 0.15，纯噪音（分数≈0）仍被过滤，但"差一点"的相关记忆不再丢
+    effective_floor = min(float(threshold), 0.15)
+    matched = [r for r in all_scored if r["score"] >= effective_floor][:top_k]
     return matched, debug_top6
 
 

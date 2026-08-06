@@ -42,6 +42,7 @@ aion-chat/data/books/
 aion-chat/data/cert.pem
 aion-chat/data/key.pem
 aion-chat/data/tmp/
+aion-chat/data/embedding_cache.json
 
 # ── Connor-Codex 用户数据 ──
 Connor-Codex/messages.jsonl
