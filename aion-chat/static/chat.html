@@ -10,8 +10,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#ff8359">
-<link rel="stylesheet" href="/static/chat.css?v=band-vibration-note-20260717">
+<link rel="stylesheet" href="/static/chat.css?v=push-20260804">
 <link rel="stylesheet" href="/static/voice-call.css?v=voice-call-polish-20260704g">
+<script src="/static/bubble-theme.js?v=bubble-theme-20260804"></script>
 </head>
 <body data-theme="dark">
 
@@ -130,6 +131,21 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="stickerManageModal">
+    <div class="modal sticker-manage-modal">
+      <div class="sticker-manage-head">
+        <h3 style="margin:0">🖼️ 表情包管理</h3>
+        <button class="btn-cancel" onclick="closeStickerManager()" style="padding:6px 16px;font-size:13px">✕ 关闭</button>
+      </div>
+      <p class="sticker-manage-tip">先「新建分组」→ 点分组里的「导入 txt」选择文件（每行：描述：URL），也可以「添加」单个表情包。</p>
+      <div class="sticker-manage-new">
+        <input id="stickerNewGroupName" placeholder="输入新组名，如：狗狗表情" maxlength="30">
+        <button class="btn-save" type="button" onclick="createStickerGroup()">新建分组</button>
+      </div>
+      <div class="sticker-manage-list" id="stickerManageList"></div>
+    </div>
+  </div>
+
 
 
 
@@ -187,6 +203,13 @@
           <select id="ttsVoiceSelect" onchange="changeTTSVoice()"><option value="">加载中...</option></select>
           <button onclick="refreshTTSVoices()" style="background:none;border:none;cursor:pointer;font-size:14px" title="刷新音色列表">🔄</button>
         </div>
+      </div>
+      <div class="cam-toggle-row">
+        <span class="cam-toggle-label">AI 发表情包 <span style="font-size:11px;color:var(--text3);margin-left:4px">默认开启</span></span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="aiStickersToggle" onchange="toggleAiStickers()">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
       <div class="cam-section">
         <div class="cam-toggle-row">
@@ -269,8 +292,21 @@
             <div class="plus-menu-item" onclick="closePlusMenu();toggleVoiceMode()"><span class="pm-icon">🎤</span>语音消息</div>            <div class="plus-menu-item" onclick="closePlusMenu();openTransferDialog()"><span class="pm-icon">💰</span>转账</div>          </div>
         </div>
         <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" onchange="handleFileSelect(this)">
+        <button class="sticker-btn" id="stickerBtn" onclick="toggleStickerPanel()" title="表情包" aria-label="表情包">😊</button>
         <textarea id="input" rows="1" placeholder="输入消息..." onkeydown="handleKey(event)" oninput="autoResize(this); _updateSendBtnState()"></textarea>
         <button class="send-btn" id="sendBtn" onclick="handleSendBtn()" disabled>➤</button>
+      </div>
+      <div class="sticker-panel" id="stickerPanel" hidden>
+        <div class="sticker-panel-head">
+          <div class="sticker-tabs" id="stickerTabs"></div>
+          <button class="sticker-manage-btn" onclick="openStickerManager()" title="管理表情包" aria-label="管理表情包">⚙</button>
+        </div>
+        <div class="sticker-grid" id="stickerGrid"></div>
+        <div class="sticker-empty" id="stickerEmpty" hidden>
+          <div class="sticker-empty-icon">😊</div>
+          <div class="sticker-empty-title">还没有表情包</div>
+          <div class="sticker-empty-sub">点右上角 ⚙ 新建分组，再导入 txt</div>
+        </div>
       </div>
       <div class="voice-mode-row" id="voiceModeRow">
         <button class="voice-kbd-btn" onclick="toggleVoiceMode()" title="切换键盘">⌨</button>
@@ -292,7 +328,7 @@
     <iframe id="subPageFrame" class="sub-page-frame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals" allow="autoplay"></iframe>
   </div>
 </div>
-<script src="/static/chat.js?v=band-vibration-note-20260717"></script>
+<script src="/static/chat.js?v=push-20260804"></script>
 <script src="/static/voice-call.js?v=voice-call-polish-20260704g"></script>
 
 <!-- ── 转账弹窗 ── -->

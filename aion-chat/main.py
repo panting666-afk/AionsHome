@@ -30,7 +30,7 @@ from camera import cam
 from voice import voice
 from schedule import schedule_mgr
 
-from routes import chat, cam as cam_routes, files, settings, memories
+from routes import chat, cam as cam_routes, files, settings, memories, stickers as stickers_routes, push as push_routes
 from routes import voice as voice_routes
 from routes import music as music_routes
 from routes import schedule as schedule_routes
@@ -117,6 +117,33 @@ async def _auto_digest_loop():
             print(f"[auto_digest] ❌ 异常: {e}")
 
 
+async def _memory_maintenance_loop():
+    """每天执行一次长期维护：备份 + 自动压缩 + VACUUM。错过当天会在开机后补跑。"""
+    import time as _time
+    from memory_maintenance import (
+        run_daily_maintenance, load_maintenance_state, save_maintenance_state,
+    )
+    while True:
+        await asyncio.sleep(60)  # 启动后先尽快补跑一次
+        try:
+            state = load_maintenance_state()
+            today = _time.strftime("%Y-%m-%d")
+            if state.get("last_maintenance_date") == today:
+                await asyncio.sleep(20 * 60)
+                continue
+            print("[memory_maintenance] 开始每日维护（备份 + 自动压缩 + VACUUM）...")
+            result = await run_daily_maintenance()
+            state["last_maintenance_date"] = today
+            state["last_result"] = result.get("message", "")
+            save_maintenance_state(state)
+            print(f"[memory_maintenance] {result.get('message', '完成')}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[memory_maintenance] ❌ 异常: {e}")
+            await asyncio.sleep(20 * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -164,6 +191,8 @@ async def lifespan(app: FastAPI):
     idle_autonomy_mgr.start()
     ha_event_listener.start()
     openclaw_weixin_runtime.start()
+    # 每日记忆维护（备份 + 自动压缩 + VACUUM）
+    memory_maintenance_task = asyncio.create_task(_memory_maintenance_loop())
     yield
     await openclaw_weixin_runtime.stop()
     await ha_event_listener.stop()
@@ -172,6 +201,7 @@ async def lifespan(app: FastAPI):
     persona_evolution_task.cancel()
     cr_digest_task.cancel()
     digest_task.cancel()
+    memory_maintenance_task.cancel()
     fund_scheduler.stop()
     pc_display_tracker.stop()
     pc_tracker.stop()
@@ -193,6 +223,22 @@ from starlette.responses import Response
 _LOCAL_PREFIXES = ("127.", "192.168.", "::1", "localhost")
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    # 可被"外观定制"上传覆盖的固定资源，强制每次校验，换图后刷新即生效
+    _APPEARANCE_PATHS = {
+        "/public/UserIcon.png",
+        "/public/AIIcon.png",
+        "/public/icon.png",
+        "/public/icon-192.png",
+        "/public/icon-512.png",
+        "/public/chat-bg-dark.jpg",
+        "/public/chat-bg-light.jpg",
+        "/public/chatroom-bg-dark.jpg",
+        "/public/chatroom-bg-light.jpg",
+        "/public/BackGround.png",
+        "/public/BackGroundN.png",
+        "/public/视频来电头像.jpg",
+    }
+
     async def dispatch(self, request: Request, call_next):
         # 壁纸大文件只允许本地 IP 访问，远程设备不需要也避免占带宽
         if request.url.path.startswith("/public/wallpaper/"):
@@ -200,7 +246,12 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
             if not any(client_ip.startswith(p) for p in _LOCAL_PREFIXES):
                 return Response("wallpaper only available on local network", status_code=403)
         response = await call_next(request)
-        if request.url.path.startswith("/static/"):
+        is_appearance = (
+            request.url.path.startswith("/static/")
+            or request.url.path.startswith("/public/funIcon_")
+            or request.url.path in self._APPEARANCE_PATHS
+        )
+        if is_appearance:
             response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
         return response
 
@@ -218,6 +269,8 @@ app.mount("/aion-pet", StaticFiles(directory=str(BASE_DIR.parent / "AionPet")), 
 
 # 路由
 app.include_router(chat.router)
+app.include_router(stickers_routes.router)
+app.include_router(push_routes.router)
 app.include_router(cam_routes.router)
 app.include_router(files.router)
 app.include_router(settings.router)

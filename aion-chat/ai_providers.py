@@ -417,6 +417,13 @@ def build_multimodal_messages(history: list, *, include_audio: bool = False):
                 parts.append({"type": "text", "text": m["content"]})
             has_file_parts = False
             for att in attachments:
+                # 表情包：外部 URL 图片直接作为 image_url 喂给视觉模型
+                if isinstance(att, dict) and att.get("type") == "sticker" and att.get("url"):
+                    _sticker_url = str(att["url"])
+                    if _sticker_url.startswith(("http://", "https://")):
+                        parts.append({"type": "image_url", "image_url": {"url": _sticker_url}})
+                        has_file_parts = True
+                    continue
                 fpath = _resolve_attachment_path(att)
                 if fpath and fpath.exists():
                     mime = mimetypes.guess_type(str(fpath))[0] or "application/octet-stream"

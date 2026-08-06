@@ -164,6 +164,8 @@ _MD_LINK_PATTERN = re.compile(r'(?<!!)\[[^\]]+\]\(([^)]+)\)')
 _BARE_HTTP_IMAGE_PATTERN = re.compile(r'(?<!["\'(])https?://[^\s<>"\']+\.(?:png|jpe?g|gif|webp)(?:\?[^\s<>"\']*)?', re.I)
 _BARE_LOCAL_IMAGE_PATTERN = re.compile(r'(?<![\w/])(?:[A-Za-z]:[\\/][^\s<>"\']+\.(?:png|jpe?g|gif|webp))', re.I)
 
+STICKER_CMD_PATTERN = re.compile(r'\[表情包:([^\]]+)\]')
+
 TOY_PRESET_NAMES = {1:'微风轻拂',2:'春水初生',3:'暗流涌动',4:'如梦似幻',5:'情潮渐涨',6:'烈焰焚身',7:'极乐之巅',8:'魂飞魄散',9:'失控'}
 
 HOME_ASSISTANT_SERVER_NAME = "Home Assistant"
@@ -182,8 +184,10 @@ def _visible_ai_text(text: str) -> str:
 
     cleaned = TRANSFER_CMD_PATTERN.sub(_hold_transfer, text)
     cleaned = strip_tool_commands(cleaned)
-    for pat in (ALARM_CMD, REMINDER_CMD, MONITOR_CMD, SCHEDULE_DEL_CMD, SCHEDULE_LIST_CMD):
+    for pat in (ALARM_CMD, REMINDER_CMD, MONITOR_CMD, SCHEDULE_DEL_CMD, SCHEDULE_LIST_CMD, STICKER_CMD_PATTERN):
         cleaned = pat.sub("", cleaned)
+    # 清除 AI 回复里回声出来的表情包标注（[发送了表情包：…] / （发送了表情包：…））
+    cleaned = re.sub(r'[\[（(]\s*(?:你|对方|金韩彬|潘婷)?\s*发送了表情包\s*[：:]\s*[^\]）)]*[\]）)]', '', cleaned)
     cleaned = ORPHAN_HOME_ARGS_PATTERN.sub("", cleaned)
     cleaned = META_TAG_PATTERN.sub("", cleaned).strip()
 
@@ -196,6 +200,51 @@ def _extract_mi_band_commands(text: str) -> tuple[str, list[str]]:
     """Extract supported vibration commands before the visible reply is cleaned."""
     commands = [value.lower() for value in BAND_VIBRATE_CMD_PATTERN.findall(text or "")]
     return BAND_VIBRATE_CMD_PATTERN.sub("", text or "").strip(), commands
+
+
+def _extract_reply_stickers(text: str, enabled: bool | None = None) -> tuple[str, list]:
+    """[表情包:描述] → 解析为 sticker 附件，并从正文移除标记。
+    enabled=None 时按「AI 发表情包」开关判断；enabled=True/False 强制指定（用户自己发时不受 AI 开关限制）。"""
+    if not text:
+        return text, []
+    matches = STICKER_CMD_PATTERN.findall(text)
+    if not matches:
+        return text, []
+    cleaned = STICKER_CMD_PATTERN.sub("", text).strip()
+    if enabled is None:
+        from config import SETTINGS
+        enabled = SETTINGS.get("ai_stickers_enabled", True)
+    if not enabled:
+        return cleaned, []
+    from routes.stickers import find_sticker_by_desc
+    atts = []
+    for desc in matches:
+        sticker = find_sticker_by_desc(desc.strip())
+        if sticker:
+            atts.append({
+                "type": "sticker",
+                "url": sticker["url"],
+                "desc": sticker["desc"],
+                "group": sticker.get("group", ""),
+            })
+    return cleaned, atts
+
+
+def _push_new_ai_message(content: str):
+    """AI 回复生成后：若用户没有任何在线连接（App 未打开），发一条系统推送。"""
+    try:
+        from ws import manager
+        if manager.active:
+            return
+        from routes.push import send_web_push_async
+        body = (content or "").strip().replace("\n", " ").replace("<meta>", "")[:120]
+        send_web_push_async(
+            load_worldbook().get("ai_name") or "AI",
+            body or "给你发了条消息",
+            {"url": "/chat"},
+        )
+    except Exception:
+        pass
 
 
 def _chat_stream_event(model_key: str, full_text: str, chunk: str) -> dict[str, str]:
@@ -1300,6 +1349,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                 source_ref=conv_id,
             )
 
+            full_text, sticker_atts = _extract_reply_stickers(full_text)
             full_text = _visible_ai_text(full_text)
 
             # 检测 [转账：N元] 指令 — AI 转账入账（不从 full_text 中剥离，前端渲染卡片需要）
@@ -1325,7 +1375,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
 
             music_atts = [{"type": "music", "name": s["name"], "artist": s["artist"], "id": s["id"]} for s in music_cards] if music_cards else []
             full_text, image_atts = _extract_reply_image_attachments(full_text)
-            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + image_atts)
+            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + sticker_atts + image_atts)
             reply_atts = await _with_link_previews(full_text, reply_atts)
             reply_atts = await with_band_vibration_attachment(ai_msg_id, reply_atts)
             att_json = json.dumps(reply_atts, ensure_ascii=False) if reply_atts else ""
@@ -1341,7 +1391,9 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _q.put({"type": "msg_created", "data": ai_msg})
             await broadcast_app_supervision_command(supervision_command)
+            _push_new_ai_message(full_text)
             await export_conversation(conv_id)
 
             if toy_matches:
@@ -1459,13 +1511,16 @@ async def send_message(conv_id: str, body: MsgCreate):
     now = time.time()
     msg_id = f"msg_{int(now*1000)}"
 
-    user_atts = await _with_link_previews(body.content, body.attachments)
+    # 用户消息里的 [表情包:描述] → 解析成表情附件，正文去掉标记（用户发不受 AI 开关限制）
+    user_content, user_sticker_atts = _extract_reply_stickers(body.content, enabled=True)
+    user_atts = _dedupe_attachments(list(body.attachments or []) + user_sticker_atts)
+    user_atts = await _with_link_previews(user_content, user_atts)
     att_json = json.dumps(user_atts, ensure_ascii=False) if user_atts else "[]"
     dedupe_key = build_message_dedupe_key(
         target_type="private",
         target_id=conv_id,
         sender="user",
-        content=body.content,
+        content=user_content,
         attachments=body.attachments,
     )
     duplicate_msg = None
@@ -1497,7 +1552,7 @@ async def send_message(conv_id: str, body: MsgCreate):
         if not duplicate_msg:
             await db.execute(
                 "INSERT INTO messages (id, conv_id, role, content, created_at, attachments) VALUES (?,?,?,?,?,?)",
-                (msg_id, conv_id, "user", body.content, now, att_json)
+                (msg_id, conv_id, "user", user_content, now, att_json)
             )
             await db.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conv_id))
         await db.commit()
@@ -1507,7 +1562,7 @@ async def send_message(conv_id: str, body: MsgCreate):
         await manager.broadcast({"type": "msg_created", "data": duplicate_msg})
         return _done_streaming_response()
 
-    user_msg = {"id": msg_id, "conv_id": conv_id, "role": "user", "content": body.content,
+    user_msg = {"id": msg_id, "conv_id": conv_id, "role": "user", "content": user_content,
                 "created_at": now, "attachments": user_atts}
     await manager.broadcast({"type": "msg_created", "data": user_msg})
 
@@ -1515,7 +1570,7 @@ async def send_message(conv_id: str, body: MsgCreate):
     cam.reset_patrol_timer()
 
     # 检测用户消息中的 [转账：N元] → 入账
-    user_transfer_matches = TRANSFER_CMD_PATTERN.findall(body.content)
+    user_transfer_matches = TRANSFER_CMD_PATTERN.findall(user_content)
     for t_amount_str in user_transfer_matches:
         try:
             t_val = float(t_amount_str)
@@ -1548,6 +1603,18 @@ async def send_message(conv_id: str, body: MsgCreate):
     # 只保留当前（最后一条）用户消息的图片附件，历史图片不带入上下文
     # 语音消息处理：历史语音消息用转写文本替代音频文件，当前消息保留音频原件
     _process_voice_attachments_in_history(history)
+
+    # 用户分享小红书链接 → 用已登录账号抓取正文，注入给 AI 看
+    shared_note_block = ""
+    try:
+        from xhs_lite import find_xhs_url, fetch_note_by_url, format_shared_note
+        _xhs_url = find_xhs_url(user_content)
+        if _xhs_url:
+            _note = await fetch_note_by_url(_xhs_url)
+            if _note:
+                shared_note_block = format_shared_note(_note)
+    except Exception as _e:
+        print(f"[xhs] 分享笔记解析失败: {_e}")
 
     # 即时哨兵：取最近实际对话用于状态更新 + 关键词提取
     # 语音消息此时 content 已包含转写文本，哨兵直接分析文本
@@ -1583,6 +1650,12 @@ async def send_message(conv_id: str, body: MsgCreate):
         model_key=model_key,
         whisper_mode=body.whisper_mode,
     )
+
+    # 1.4 注入用户分享的小红书笔记内容（如果有）
+    if shared_note_block:
+        history.insert(cap_idx + inject_offset, {"role": "user", "content": shared_note_block})
+        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我看看你分享的这篇笔记。"})
+        inject_offset += 2
 
     # 1.5 注入剧场·场外求助上下文（如果有）
     theater_session = None
@@ -1658,7 +1731,7 @@ async def send_message(conv_id: str, body: MsgCreate):
         recall_query = _build_recall_query(
             topic,
             recall_keywords,
-            query_text=body.content,
+            query_text=user_content,
             recent_messages=actual_recent,
             status=digest_result.get("status", ""),
         )
@@ -1981,12 +2054,13 @@ async def send_message(conv_id: str, body: MsgCreate):
                             print(f"[剧场] 道具赠送: {item_name}")
 
             # 清洗 AI 回复中模仿产生的 <meta> 标签
+            full_text, sticker_atts = _extract_reply_stickers(full_text)
             full_text = _visible_ai_text(full_text)
 
             # 将音乐点歌信息存入 attachments，刷新后可显示胶囊
             music_atts = [{"type": "music", "name": s["name"], "artist": s["artist"], "id": s["id"]} for s in music_cards] if music_cards else []
             full_text, image_atts = _extract_reply_image_attachments(full_text)
-            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + image_atts)
+            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + sticker_atts + image_atts)
             reply_atts = await _with_link_previews(full_text, reply_atts)
             reply_atts = await with_band_vibration_attachment(ai_msg_id, reply_atts)
             att_json = json.dumps(reply_atts, ensure_ascii=False) if reply_atts else ""
@@ -2002,7 +2076,9 @@ async def send_message(conv_id: str, body: MsgCreate):
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _q.put({"type": "msg_created", "data": ai_msg})
             await broadcast_app_supervision_command(supervision_command)
+            _push_new_ai_message(full_text)
             await export_conversation(conv_id)
 
             # 推送 [TOY:x] 指令到前端
@@ -3102,12 +3178,13 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                     pass
 
             # 清洗 AI 回复中模仿产生的 <meta> 标签
+            full_text, sticker_atts = _extract_reply_stickers(full_text)
             full_text = _visible_ai_text(full_text)
 
             # 将音乐点歌信息存入 attachments，刷新后可显示胶囊
             music_atts = [{"type": "music", "name": s["name"], "artist": s["artist"], "id": s["id"]} for s in music_cards] if music_cards else []
             full_text, image_atts = _extract_reply_image_attachments(full_text)
-            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + image_atts)
+            reply_atts = _dedupe_attachments(music_atts + luckin_payment_attachments(luckin_results) + sticker_atts + image_atts)
             reply_atts = await _with_link_previews(full_text, reply_atts)
             reply_atts = await with_band_vibration_attachment(ai_msg_id, reply_atts)
             att_json = json.dumps(reply_atts, ensure_ascii=False) if reply_atts else ""
@@ -3123,7 +3200,9 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _q.put({"type": "msg_created", "data": ai_msg})
             await export_conversation(conv_id)
+            _push_new_ai_message(full_text)
 
             # 推送 [TOY:x] 指令到前端
             if toy_matches:

@@ -13,7 +13,7 @@
   --user-link-preview-offset: clamp(18px, 7vw, 54px);
 }
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; }
+html, body { height:100vh; }
 body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
 
 /* ── 自定义滚动条 ── */
@@ -33,7 +33,7 @@ body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-se
 }
 
 /* ── 布局 ── */
-.app { display: flex; height: 100dvh; }
+.app { display: flex; height: 100vh; }
 
 /* ── 侧栏 ── */
 .sidebar { width: 280px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
@@ -424,6 +424,8 @@ body[data-theme="light"] .msg-row.system .system-notice { background: rgba(0,0,0
 .input-row textarea:focus { border-color: var(--accent); }
 .upload-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text2); border-radius:50%; width:42px; height:42px; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .upload-btn:hover { color:var(--text); border-color:var(--text2); }
+/* 表情按钮尺寸与加号按钮完全一致，且必须定义在这里（媒体查询才能正确覆盖） */
+.sticker-btn { width:42px; height:42px; border-radius:50%; font-size:17px; line-height:1; }
 
 /* ── 附加功能菜单 ── */
 .plus-menu-wrap { position:relative; flex-shrink:0; }
@@ -456,6 +458,8 @@ body[data-theme="light"] .msg-row.system .system-notice { background: rgba(0,0,0
 .msg-media { margin-top:6px; }
 .msg-row:not(.user) .msg-media { align-self:flex-start; }
 .msg-row.user .msg-media { align-self:flex-end; margin-right:var(--user-link-preview-offset); }
+/* 用户发的表情包：不套用链接卡片的右偏移，紧贴气泡右缘 */
+.msg-row.user .msg-media:has(.sticker-item) { margin-right: 0; }
 .msg-media img { max-width:260px; max-height:200px; border-radius:8px; cursor:pointer; }
 .msg-media img, .cr-inline-img { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .msg-media video { max-width:260px; max-height:200px; border-radius:8px; }
@@ -1273,7 +1277,7 @@ body[data-theme="light"] .theme-switch::before {
 }
 
 .app {
-  height: calc(100dvh - 16px);
+  height: calc(100vh - 16px);
   margin: 8px 18px;
   gap: 18px;
   padding: 0;
@@ -1340,6 +1344,7 @@ body[data-theme="light"] .chat-area::before {
 .chat-header .menu-btn,
 .mobile-theme-btn,
 .upload-btn,
+.sticker-btn,
 .voice-kbd-btn {
   background: rgba(36, 45, 106, 0.48);
   color: var(--text);
@@ -1353,6 +1358,7 @@ body[data-theme="light"] .chat-header .home-btn,
 body[data-theme="light"] .chat-header .menu-btn,
 body[data-theme="light"] .mobile-theme-btn,
 body[data-theme="light"] .upload-btn,
+body[data-theme="light"] .sticker-btn,
 body[data-theme="light"] .voice-kbd-btn {
   background: rgba(244, 247, 255, 0.66);
 }
@@ -1551,6 +1557,7 @@ body[data-theme="light"] .input-row textarea { background: rgba(238, 243, 255, 0
 .input-row textarea::placeholder { color: var(--text3); }
 .upload-btn,
 .send-btn,
+.sticker-btn,
 .voice-kbd-btn {
   width: 56px;
   height: 56px;
@@ -1683,7 +1690,7 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   body { display: block; }
   .app {
-    height: 100dvh;
+    height: 100vh;
     margin: 0;
     gap: 0;
   }
@@ -1795,6 +1802,7 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   .upload-btn,
   .send-btn,
+  .sticker-btn,
   .voice-kbd-btn {
     width: 34px;
     height: 34px;
@@ -1851,6 +1859,7 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   .input-row textarea { font-size: 14px; padding: 7px 9px; min-width: 0; min-height: 32px; }
   .upload-btn,
   .send-btn,
+  .sticker-btn,
   .voice-kbd-btn {
     width: 32px;
     height: 32px;
@@ -2117,3 +2126,248 @@ body[data-theme="light"] .date-summary-text { color: #42506d; }
 .msg-bubble:has(.transfer-card)::after {
   display: none !important;
 }
+
+
+/* ── 表情包：按钮 + 面板 + 消息内图片 + 管理弹窗 ── */
+.input-area { position: relative; }
+
+.sticker-btn {
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2);
+  transition: transform .15s ease, border-color .15s ease;
+  position: relative;
+}
+.sticker-btn:hover { color: var(--text); transform: translateY(-1px); }
+.sticker-btn:active { transform: scale(.92); }
+.sticker-btn.active { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px rgba(255,131,89,0.22); }
+
+/* 面板 */
+.sticker-panel {
+  position: absolute;
+  left: 6px;
+  bottom: calc(100% + 6px);
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(42vh, 340px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  overflow: hidden;
+  z-index: 40;
+}
+.sticker-panel[hidden] { display: none; }
+.sticker-panel-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 8px 4px;
+}
+.sticker-tabs {
+  display: flex; gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
+  flex: 1;
+  padding-bottom: 2px;
+}
+.sticker-tabs::-webkit-scrollbar { display: none; }
+.sticker-tab {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text2);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.sticker-tab em { font-style: normal; font-size: 11px; opacity: .6; }
+.sticker-tab:hover { color: var(--text); border-color: var(--text2); }
+.sticker-tab.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), #ff9d5c);
+  box-shadow: 0 4px 14px rgba(255,131,89,0.35);
+}
+.sticker-tab.active em { opacity: .85; }
+.sticker-manage-btn {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text2);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.sticker-manage-btn:hover { color: var(--text); border-color: var(--accent); transform: rotate(20deg); }
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+}
+.sticker-cell {
+  position: relative;
+  min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  padding: 5px 4px 6px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.sticker-cell:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,0.16); }
+.sticker-cell:active { transform: scale(.94); }
+.sticker-cell-imgwrap {
+  position: relative; width: 100%;
+  height: 0; padding-bottom: 100%;   /* 1:1 占位，任何浏览器都不塌陷、不重叠 */
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(140,140,160,0.08);
+}
+.sticker-cell-imgwrap.broken::after { content: "😢"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.sticker-cell-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.sticker-cell-desc {
+  font-size: 10.5px; color: var(--text2);
+  max-width: 100%; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.sticker-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 26px 12px; color: var(--text2); text-align: center;
+}
+.sticker-empty[hidden] { display: none; }
+.sticker-empty-icon { font-size: 34px; }
+.sticker-empty-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.sticker-empty-sub { font-size: 12px; opacity: .7; }
+
+/* 消息里的表情包图片 */
+.sticker-item { display: flex; flex-direction: column; align-items: center; gap: 3px; max-width: 220px; width: fit-content; }
+.sticker-img {
+  width: 100px; height: 100px;
+  max-width: 100px; max-height: 100px;
+  border-radius: 14px;
+  object-fit: contain;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  cursor: pointer;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.sticker-desc {
+  font-size: 11px; color: var(--text3);
+  background: rgba(128,128,140,0.12);
+  padding: 2px 10px; border-radius: 999px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 管理弹窗 */
+.sticker-manage-modal { max-width: 620px; max-height: 84vh; display: flex; flex-direction: column; }
+.sticker-manage-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.sticker-manage-tip { font-size: 12.5px; color: var(--text2); line-height: 1.6; margin: 0 0 12px; }
+.sticker-manage-new { display: flex; gap: 8px; margin-bottom: 14px; }
+.sticker-manage-new input {
+  flex: 1; min-width: 0;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+  font-size: 14px; outline: none;
+}
+.sticker-manage-new input:focus { border-color: var(--accent); }
+.sticker-manage-list { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.sticker-manage-empty { color: var(--text2); font-size: 13px; padding: 20px 4px; text-align: center; }
+.sm-group {
+  border: 1px solid var(--border); border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  padding: 10px 12px;
+}
+.sm-group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sm-group-head strong { font-size: 14px; color: var(--text); }
+.sm-group-head em { font-style: normal; font-size: 11px; color: var(--text3); }
+.sm-group-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.sm-group-actions .btn-save, .sm-group-actions .btn-cancel { padding: 5px 12px; font-size: 12.5px; border-radius: 8px; }
+.modal .btn-cancel.danger { background: rgba(207,34,46,0.12); color: var(--danger); border: 1px solid rgba(207,34,46,0.35); }
+.sm-stickers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.sm-cell {
+  position: relative; width: 58px; height: 58px;
+  border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface2);
+}
+.sm-cell-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sm-cell-del {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.55); color: #fff;
+  font-size: 12px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s ease;
+}
+.sm-cell:hover .sm-cell-del { opacity: 1; }
+.sm-empty { font-size: 12px; color: var(--text3); }
+.sm-add-form { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.sm-add-form input {
+  flex: 1; min-width: 120px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; outline: none;
+}
+.sm-add-form input:focus { border-color: var(--accent); }
+.sm-add-form .btn-save, .sm-add-form .btn-cancel { padding: 5px 12px; font-size: 12.5px; border-radius: 8px; }
+
+@media (max-width: 560px) {
+  .sticker-panel { max-height: 46vh; }
+  .sticker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 8px; }
+  .sticker-cell { padding: 4px 3px 5px; gap: 3px; }
+  .sticker-cell-desc { font-size: 9.5px; }
+  .sm-cell { width: 52px; height: 52px; }
+}
+
+/* 轻量 toast（聊天页通用） */
+.toast-msg {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(30,32,44,0.92);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+  z-index: 200;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.toast-msg.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── 通知推送横幅 ── */
+.push-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 6px 12px 0;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255,131,89,0.16), rgba(255,131,89,0.06));
+  border: 1px solid rgba(255,131,89,0.35);
+  color: var(--text);
+  font-size: 13px;
+}
+.push-banner[hidden] { display: none; }
+.push-banner-text { line-height: 1.4; }
+.push-banner-btn {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent), #ff9d5c);
+  color: #fff; border: none; cursor: pointer;
+  padding: 6px 16px; border-radius: 999px;
+  font-size: 13px; font-weight: 700;
+  box-shadow: 0 4px 12px rgba(255,131,89,0.35);
+}
+.push-banner-btn:active { transform: scale(.95); }

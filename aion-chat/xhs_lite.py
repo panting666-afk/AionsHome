@@ -263,6 +263,116 @@ def _extract_note_content(detail: dict) -> dict:
     }
 
 
+# ── 分享小红书笔记给 AI 看 ─────────────────────────
+import re
+from urllib.parse import urlparse, parse_qs
+
+_XHS_NOTE_URL_RE = re.compile(
+    r'xiaohongshu\.com/(?:explore|discovery/item|welcome)/([0-9a-zA-Z]+)'
+)
+_XHS_URL_RE = re.compile(
+    r'https?://(?:www\.)?xiaohongshu\.com/\S+|https?://xhslink\.(?:com|cn)/\S+',
+    re.I,
+)
+
+
+def find_xhs_url(text: str) -> str | None:
+    """从一段文本里找出小红书笔记链接（xiaohongshu.com 或 xhslink.com 短链）"""
+    m = _XHS_URL_RE.search(text or "")
+    return m.group(0).rstrip('，。；;！!？?）)】】"\' ') if m else None
+
+
+async def _resolve_short_url(url: str, cookie: str = "") -> str:
+    """xhslink 短链 → 跟随跳转拿真实链接。用手机浏览器标识 + 完整请求头，避免被小红书拦截。"""
+    import httpx
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": "https://www.xiaohongshu.com/",
+    }
+    if cookie:
+        headers["Cookie"] = cookie
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(url)
+            return str(resp.url)
+    except Exception:
+        return url
+
+
+def parse_note_url(url: str) -> dict | None:
+    """从小红书笔记链接提取 note_id / xsec_token / xsec_source"""
+    m = _XHS_NOTE_URL_RE.search(url or "")
+    if not m:
+        return None
+    qs = parse_qs(urlparse(url).query)
+    return {
+        "note_id": m.group(1),
+        "xsec_token": (qs.get("xsec_token") or [""])[0],
+        "xsec_source": (qs.get("xsec_source") or ["pc_feed"])[0],
+    }
+
+
+async def fetch_note_by_url(url: str, timeout: int = 15) -> dict | None:
+    """用已登录的小红书 cookie 抓取一篇笔记的正文。未登录/失败返回 None。"""
+    cfg = load_config()
+    cookie = (cfg.get("cookie") or "").strip()
+    if not cookie:
+        return None
+    if "xhslink." in url:
+        url = await _resolve_short_url(url, cookie)
+    parsed = parse_note_url(url)
+    if not parsed:
+        return None
+    try:
+        data = await _run_worker(
+            "get-feed-detail",
+            {
+                "feed_id": parsed["note_id"],
+                "xsec_token": parsed["xsec_token"],
+                "xsec_source": parsed["xsec_source"],
+            },
+            cookie=cookie,
+            timeout=timeout,
+        )
+    except Exception as e:
+        print(f"[xhs] 抓取笔记失败: {e}")
+        return None
+    inner = (data or {}).get("data") or {}
+    note = inner.get("note") or (data or {}).get("note") or {}
+    title = note.get("title") or note.get("display_title") or ""
+    desc = note.get("content") or note.get("desc") or note.get("description") or ""
+    author = ((note.get("user") or {}) or {}).get("nickname") or ""
+    images = note.get("image_list") or []
+    if not (title or desc):
+        return None
+    return {
+        "title": title,
+        "desc": desc,
+        "author": author,
+        "image_count": len(images),
+        "url": url,
+    }
+
+
+def format_shared_note(note: dict) -> str:
+    """把抓到的笔记格式化成给 AI 看的上下文"""
+    parts = ["【用户分享的小红书笔记】"]
+    if note.get("title"):
+        parts.append(f"标题：{note['title']}")
+    if note.get("author"):
+        parts.append(f"作者：{note['author']}")
+    if note.get("desc"):
+        parts.append(f"正文：\n{note['desc']}")
+    if note.get("image_count"):
+        parts.append(f"（共 {note['image_count']} 张图）")
+    return "\n".join(parts)
+
+
 async def _list_followings_all(cookie: str, cfg: dict, login_user_id: str = "") -> list[dict]:
     users: list[dict] = []
     cursor = ""

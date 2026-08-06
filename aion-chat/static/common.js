@@ -340,9 +340,47 @@ function sendSystemNotification(title, body) {
   try { new Notification(title, { body, icon: '/public/icon-192.png' }); } catch(e) {}
 }
 
-// 请求通知权限
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
+/* ── Web Push 订阅（App 关着也能收到系统推送） ── */
+function _urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+async function setupPushSubscription() {
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const res = await fetch('/api/push/vapid-public-key');
+      const data = await res.json();
+      if (!data.key) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlBase64ToUint8Array(data.key),
+      });
+    }
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON ? sub.toJSON() : sub),
+    });
+  } catch (e) { /* 不支持或失败时静默 */ }
+}
+
+// 请求通知权限（允许后自动订阅 Web Push）
+if ('Notification' in window) {
+  const _perm = Notification.permission;
+  if (_perm === 'granted') {
+    setupPushSubscription();
+  } else if (_perm === 'default') {
+    Notification.requestPermission().then((p) => { if (p === 'granted') setupPushSubscription(); });
+  }
 }
 
 /* ── 礼物弹窗系统 ── */
@@ -535,3 +573,15 @@ async function _receiveGift(giftId) {
     _presentNextGift();
   }, 800);
 }
+
+// ── 气泡主题（自定义 CSS / 预设配色）— 给子页面也生效 ──
+(function () {
+  if (document.getElementById('aion-bubble-theme-common')) return;
+  if (window._aionBubbleThemeLoaded) return;
+  window._aionBubbleThemeLoaded = true;
+  var s = document.createElement('script');
+  s.src = '/static/bubble-theme.js?v=bubble-theme-20260804';
+  s.async = true;
+  s.id = 'aion-bubble-theme-common';
+  document.head.appendChild(s);
+})();

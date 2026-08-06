@@ -33,6 +33,7 @@ from date_theater import (
     parse_outline_payload,
     resolve_sync_target,
     resolve_date_model,
+    resolve_date_persona,
     save_date_config,
     scan_date_assets,
 )
@@ -56,6 +57,7 @@ class DateConfigUpdate(BaseModel):
     active_persona_id: Optional[str] = None
     model: Optional[str] = None
     model_locked: Optional[bool] = None
+    reuse_main_persona: Optional[bool] = None
 
 
 class DateOutlineRequest(BaseModel):
@@ -296,7 +298,7 @@ async def generate_outline(body: DateOutlineRequest):
     cfg = load_date_config()
     user_name, _ai_name = _world_names()
     assets = scan_date_assets()
-    persona = (body.persona or cfg.get("persona") or "").strip()
+    persona = resolve_date_persona(cfg, body.persona or "")
     partner_name = (body.partner_name or cfg.get("partner_name") or "AI").strip() or "AI"
     model_key = _resolve_model(body.model, cfg)
     prompt = build_outline_prompt(
@@ -512,7 +514,7 @@ async def send_message(session_id: str, body: DateSendRequest):
                         session=fresh_session,
                         partner_name=fresh_session.get("partner_name") or cfg.get("partner_name") or "AI",
                         user_name=user_name,
-                        persona=fresh_session.get("persona") or cfg.get("persona") or "",
+                        persona=resolve_date_persona(cfg, fresh_session.get("persona") or ""),
                         assets=assets,
                     ),
                 },

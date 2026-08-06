@@ -376,6 +376,12 @@ class ScheduleManager:
                 "data": {"id": sid, "content": content, "trigger_at": trigger_at, "origin": origin, "origin_name": origin_name},
             })
             await manager.broadcast({"type": "schedule_changed"})
+            # Web Push 系统推送（App 关闭时也能收到）
+            try:
+                from routes.push import send_web_push_async
+                send_web_push_async("⏰ 日程提醒", str(content)[:120])
+            except Exception:
+                pass
 
         # ── 确定响应目标 ──
         target = self._resolve_target(item)

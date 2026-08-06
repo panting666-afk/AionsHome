@@ -31,6 +31,37 @@ def _default_persona_text() -> str:
     return "这是一个独立的约会人设：温柔、克制、会自然推进暧昧氛围，但不使用数值化的心情、亲密度或游戏状态。"
 
 
+def build_main_chat_persona_text() -> str:
+    """按主聊天的注入方式，从世界书拼出 AI 的完整人设文本（不含记忆）。"""
+    wb = load_worldbook()
+    parts: list[str] = []
+    ai_name = (wb.get("ai_name") or "AI").strip() or "AI"
+    user_name = (wb.get("user_name") or "用户").strip() or "用户"
+    ai_persona = (wb.get("ai_persona") or "").strip()
+    user_persona = (wb.get("user_persona") or "").strip()
+    system_prompt = (wb.get("system_prompt") or "").strip()
+    if ai_persona:
+        parts.append(f"[系统设定 - {ai_name}人设]\n{ai_persona}")
+    if user_persona:
+        parts.append(f"[系统设定 - {user_name}信息]\n{user_persona}")
+    if system_prompt and wb.get("system_prompt_enabled", True):
+        parts.append(f"[系统提示]\n{system_prompt}")
+    return "\n\n".join(parts)
+
+
+def resolve_date_persona(cfg: dict, explicit: str = "") -> str:
+    """
+    决定最终使用的约会人设文本：
+    勾选「复用主聊天人设」时用主聊天的人设（主聊天人设为空则退回约会人设）；
+    否则用传入的 explicit（会话/请求人设）或配置里的约会人设。
+    """
+    if cfg.get("reuse_main_persona"):
+        main_text = build_main_chat_persona_text().strip()
+        if main_text:
+            return main_text
+    return (explicit or cfg.get("persona") or "").strip()
+
+
 def _clean_id(value: str, fallback: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9_\-]", "_", str(value or "").strip())
     text = re.sub(r"_+", "_", text).strip("_")
@@ -101,6 +132,7 @@ def _default_config() -> dict:
         "active_persona_id": "default",
         "model": "",
         "model_locked": False,
+        "reuse_main_persona": False,
     }
 
 
@@ -123,11 +155,11 @@ def save_date_config(data: dict) -> dict:
     cfg = load_date_config()
     if "model" in data and data["model"] is not None:
         cfg["model_locked"] = True
-    for key in ("partner_name", "persona", "model", "active_persona_id", "persona_presets", "model_locked"):
+    for key in ("partner_name", "persona", "model", "active_persona_id", "persona_presets", "model_locked", "reuse_main_persona"):
         if key in data and data[key] is not None:
             if key == "persona_presets":
                 cfg[key] = data[key]
-            elif key == "model_locked":
+            elif key in ("model_locked", "reuse_main_persona"):
                 cfg[key] = bool(data[key])
             else:
                 cfg[key] = str(data[key]).strip()

@@ -989,6 +989,12 @@ class CameraMonitor:
                     broadcast_future.result(timeout=5)
                 except Exception as error:
                     print(f"[Monitor] 手机截图请求广播失败: {error}")
+                # Web Push 系统推送（App 关闭时也能收到监控提醒）
+                try:
+                    from routes.push import send_web_push_async
+                    send_web_push_async("📷 监控提醒", "哨兵即将查看监控画面")
+                except Exception:
+                    pass
                 from phone_screen import wait_for_phone_screen_after_sync
                 wait_for_phone_screen_after_sync(
                     phone_screen_requested_at,

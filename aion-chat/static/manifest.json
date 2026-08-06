@@ -1,6 +1,6 @@
 {
-  "name": "Aion Chat",
-  "short_name": "Aion",
+  "name": "Binary Orbit",
+  "short_name": "Binary Orbit",
   "description": "Aion AI 聊天助手",
   "start_url": "/chat",
   "scope": "/",

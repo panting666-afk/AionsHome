@@ -3,6 +3,7 @@ let currentConvId = null;
 let currentMessages = [];
 let serverMessageIds = new Set();
 let models = [];
+let refreshModelsRunning = false;
 const DEPRECATED_MODEL_PROVIDERS = new Set(["gemini_cli", "antigravity_cli"]);
 let sending = false;
 let streamingAiId = null;
@@ -128,10 +129,84 @@ async function init() {
   $("messages").addEventListener("scroll", function() {
     if (this.scrollTop < 80) loadOlderMessages();
   });
-  // 请求系统通知权限
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
+  // 通知推送：权限已授予就订阅；未授予则注入「开启」横幅（iOS 需用户点击才弹权限提示）
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      setupChatPushSubscription();
+      hidePushBanner();
+    } else {
+      ensurePushBanner();
+    }
   }
+}
+
+function ensurePushBanner() {
+  var b = document.getElementById('pushBanner');
+  if (b) return;
+  b = document.createElement('div');
+  b.id = 'pushBanner';
+  b.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:12px;right:12px;z-index:99999;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#ff8359,#ff9d5c);color:#fff;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(255,131,89,0.45);';
+  b.innerHTML = '<span>🔔 开启通知推送，App 关着也能收到 AI 消息</span>' +
+    '<button onclick="enablePushNotifications()" style="flex-shrink:0;background:#fff;color:#ff8359;border:none;border-radius:999px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;">开启</button>';
+  document.body.appendChild(b);
+}
+function showPushBanner() {
+  ensurePushBanner();
+}
+function hidePushBanner() {
+  var b = document.getElementById('pushBanner');
+  if (b) b.remove();
+}
+function enablePushNotifications() {
+  if (!('Notification' in window)) { showToast('当前设备不支持通知'); return; }
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(function (p) {
+      if (p === 'granted') {
+        setupChatPushSubscription();
+        hidePushBanner();
+        showToast('✅ 通知推送已开启');
+      } else {
+        showToast('未开启通知权限');
+      }
+    });
+  } else if (Notification.permission === 'granted') {
+    setupChatPushSubscription();
+    hidePushBanner();
+    showToast('✅ 通知推送已开启');
+  } else {
+    showToast('通知权限被拒绝，请到 iPhone 设置 → Aion → 通知 里打开');
+  }
+}
+
+function _chatUrlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+async function setupChatPushSubscription() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const res = await fetch('/api/push/vapid-public-key');
+      const data = await res.json();
+      if (!data.key) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _chatUrlBase64ToUint8Array(data.key),
+      });
+    }
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON ? sub.toJSON() : sub),
+    });
+  } catch (e) { /* 静默 */ }
 }
 
 function escHtml(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
@@ -961,12 +1036,14 @@ document.addEventListener('visibilitychange', () => {
   else {
     bumpTTSPlaybackState();
     reconcilePrivateSync();
+    refreshModels();
   }
 });
 window.addEventListener('pagehide', refreshTTSPlaybackState);
 window.addEventListener('pageshow', bumpTTSPlaybackState);
 document.addEventListener('freeze', refreshTTSPlaybackState);
 window.addEventListener('focus', bumpTTSPlaybackState);
+window.addEventListener('focus', refreshModels);
 document.addEventListener('pointerdown', bumpTTSPlaybackState, { passive: true });
 document.addEventListener('keydown', bumpTTSPlaybackState);
 
@@ -1724,6 +1801,22 @@ function messagesForDisplay(messages) {
 }
 
 // ── 渲染 ──
+// 切回页面/重新聚焦时刷新模型列表，确保设置里新增的自定义模型立即可选
+async function refreshModels() {
+  if (refreshModelsRunning) return;
+  refreshModelsRunning = true;
+  try {
+    const fresh = await api("GET", "/api/models");
+    const cur = $("modelSelect") ? $("modelSelect").value : "";
+    models = fresh;
+    renderModelSelect();
+    if (cur && $("modelSelect") && $("modelSelect").querySelector(`option[value="${cur}"]`)) {
+      $("modelSelect").value = cur;
+    }
+  } catch (e) { /* 拉取失败则保留旧列表 */ }
+  finally { refreshModelsRunning = false; }
+}
+
 function renderModelSelect() {
   const visibleModels = models.filter(m => !DEPRECATED_MODEL_PROVIDERS.has(m.provider));
   $("modelSelect").innerHTML = visibleModels.map(m =>
@@ -1800,6 +1893,7 @@ function renderMessages() {
     const rawDisplayContent = isUser ? (m.content || '') : (m.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
     const displayContent = stripWishFulfillmentMarker(rawDisplayContent).trim();
     const hasVoiceAtt = messageAttachments.some(a => typeof a === 'object' && (a.type === 'voice' || a.type === 'video_clip'));
+    const hasStickerAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'sticker');
     const hasWishFulfillmentAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'wish_fulfillment');
     const hasDateSummaryAtt = messageAttachments.some(a => typeof a === 'object' && a.type === 'date_summary');
     const isEmptyMessage = !displayContent && messageAttachments.length === 0;
@@ -1819,6 +1913,18 @@ function renderMessages() {
     } else if (hasVoiceAtt && !displayContent.trim()) {
       // 纯语音消息：不显示文本气泡，只显示语音气泡
       bubblesHtml = `<div class="msg-bubble" style="background:transparent;padding:0;box-shadow:none;border:none">${renderAttachments(messageAttachments)}</div>`;
+    } else if (hasStickerAtt) {
+      // 表情包消息：不加气泡包裹，就显示表情图片本身
+      if (displayContent.trim()) {
+        // 有文字 + 表情包：文字正常气泡，表情包单独显示（无气泡）
+        const textBubble = parts.length > 1
+          ? '<div class="msg-bubbles">' + parts.map(renderMsgPart).join('') + '</div>'
+          : '<div class="msg-bubble">' + formatMsg(displayContent) + '</div>';
+        bubblesHtml = textBubble + renderAttachments(messageAttachments);
+      } else {
+        // 纯表情包：完全没有气泡
+        bubblesHtml = renderAttachments(messageAttachments);
+      }
     } else if (parts.length > 1) {
       bubblesHtml = '<div class="msg-bubbles">' + parts.map(renderMsgPart).join('') + renderAttachments(messageAttachments) + '</div>';
     } else {
@@ -2700,19 +2806,23 @@ function _getMaxTokens() {
 async function send() {
   const input = $("input");
   const text = input.value.trim();
-  if ((!text && !pendingAttachments.length) || !currentConvId || sending) return;
+  // 本地解析 [表情包:描述] → 转成附件 + 干净正文
+  const parsed = (typeof parseStickerMarkersLocal === 'function') ? parseStickerMarkersLocal(text) : { text, atts: [] };
+  const cleanText = parsed.text;
+  const stickerAtts = parsed.atts;
+  if ((!cleanText && !stickerAtts.length && !pendingAttachments.length) || !currentConvId || sending) return;
 
   sending = true;
   _showStopBtn();
   input.value = "";
   autoResize(input);
-  const attachments = pendingAttachments.map(a => a.url);
+  const attachments = pendingAttachments.map(a => a.url).concat(stickerAtts);
   pendingAttachments = [];
   renderPreview();
 
   // 立即显示用户消息（乐观更新）
   playSend();
-  const tempUserMsg = { id: "temp_user", conv_id: currentConvId, role: "user", content: text, created_at: Date.now()/1000, attachments };
+  const tempUserMsg = { id: "temp_user", conv_id: currentConvId, role: "user", content: cleanText, created_at: Date.now()/1000, attachments };
   upsertCurrentMessage(tempUserMsg);
   renderMessages();
 
@@ -2724,7 +2834,7 @@ async function send() {
     const res = await fetch(`/api/conversations/${currentConvId}/send`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ content: text, context_limit: contextLimit, attachments, whisper_mode: whisperMode, temperature, max_tokens: maxTokens, tts_enabled: ttsEnabled, tts_voice: ttsVoiceId, client_id: _clientId }),
+      body: JSON.stringify({ content: cleanText, context_limit: contextLimit, attachments, whisper_mode: whisperMode, temperature, max_tokens: maxTokens, tts_enabled: ttsEnabled, tts_voice: ttsVoiceId, client_id: _clientId }),
       signal: _abortController.signal
     });
 
@@ -2789,7 +2899,7 @@ async function _processSSEStream(res) {
             if (aiFinalAlreadyReceived) continue;
             _stopTypingAnim();
             aiContent = data.type === "replace" ? data.content : aiContent + data.content;
-            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/\[表情包:[^\]]*\]/g, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
             const mi = currentMessages.findIndex(m => m.id === aiMsgId);
             if (mi >= 0) currentMessages[mi].content = display;
             const container = document.getElementById(`m_${aiMsgId}`);
@@ -2815,6 +2925,20 @@ async function _processSSEStream(res) {
               }
             }
             scrollBottom();
+          } else if (data.type === "msg_created") {
+            // 服务端在 SSE 流里也推了最终 AI 消息 → 用干净数据渲染，不依赖 WebSocket
+            if (!serverMessageIds.has(data.id)) {
+              serverMessageIds.add(data.id);
+              if (data.conv_id === currentConvId) {
+                if (data.id === aiMsgId) {
+                  aiFinalAlreadyReceived = true;
+                  streamingAiId = null;
+                }
+                upsertCurrentMessage(data);
+                renderMessages();
+                scrollBottom();
+              }
+            }
           } else if (data.type === "debug" && aiMsgId) {
             msgDebugData[aiMsgId] = data;
             renderDebugBar(aiMsgId);
@@ -2848,6 +2972,8 @@ async function _processSSEStream(res) {
         } catch {}
       }
     }
+    // 兜底：流结束强制按最终内容重渲染，清除流式残留的原始标记/错位格式
+    if (aiMsgId && !aiFinalAlreadyReceived) renderMessages();
     if (aiMsgId) finishTTSForMsg(aiMsgId);
     if (aiMsgId && !aiFinalAlreadyReceived) playRecv();
     if ((voiceInCall || (typeof videoCall !== 'undefined' && videoCall.active)) && !ttsEnabled) {
@@ -2961,7 +3087,7 @@ async function saveEdit(id) {
           } else if (data.type === 'chunk' || data.type === 'replace') {
             _stopTypingAnim();
             aiContent = data.type === 'replace' ? data.content : aiContent + data.content;
-            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/\[表情包:[^\]]*\]/g, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
             const mi = currentMessages.findIndex(m => m.id === aiMsgId);
             if (mi >= 0) currentMessages[mi].content = display;
             const container = document.getElementById(`m_${aiMsgId}`);
@@ -3020,6 +3146,7 @@ async function saveEdit(id) {
         } catch {}
       }
     }
+    if (aiMsgId && !aiFinalAlreadyReceived) renderMessages();
     if (aiMsgId) finishTTSForMsg(aiMsgId);
     if ((voiceInCall || (typeof videoCall !== 'undefined' && videoCall.active)) && !ttsEnabled) {
       notifyVoiceAiSpeaking(false);
@@ -3096,7 +3223,7 @@ async function regenerateMsg(aiMsgId) {
           } else if (d.type === "chunk" || d.type === "replace") {
             _stopTypingAnim();
             aiContent = d.type === "replace" ? d.content : aiContent + d.content;
-            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+            const display = aiContent.replace(/\[CAM_CHECK\]/g, '').replace(/\[POI_SEARCH:[^\]]*\]/g, '').replace(/\[MUSIC:[^\]]*\]/g, '').replace(/\[ALARM:[^\]]*\]/g, '').replace(/\[REMINDER:[^\]]*\]/g, '').replace(/\[Monitor:[^\]]*\]/g, '').replace(/\[SCHEDULE_DEL:[^\]]*\]/g, '').replace(/\[SCHEDULE_LIST\]/g, '').replace(/\[TOY:[^\]]*\]/g, '').replace(/\[HEART:[^\]]*\]/g, '').replace(/\[MEMORY:[^\]]*\]/g, '').replace(/\[查看动态:\d+\]/g, '').replace(/\[视频电话\]/g, '').replace(/\[SELFIE:\s*[^\]]*\]/g, '').replace(/\[DRAW:\s*[^\]]*\]/g, '').replace(/\[SONG\][\s\S]*?\[\/SONG\]/gi, '').replace(/\[表情包:[^\]]*\]/g, '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
             const mi = currentMessages.findIndex(m => m.id === newId);
             if (mi >= 0) currentMessages[mi].content = display;
             const b = document.querySelector(`#m_${newId} .msg-bubble`);
@@ -4054,6 +4181,10 @@ function renderAttachments(atts) {
         voiceHtml += `<div class="voice-transcript">${escHtml(transcript)}</div>`;
       }
       voiceHtml += `</div>`;
+    } else if (typeof item === 'object' && item.type === 'sticker') {
+      const su = escHtml(item.url || '');
+      const sd = escHtml(item.desc || '');
+      mediaHtml += `<div class="sticker-item"><img class="sticker-img" src="${su}" alt="${sd}" title="${sd}" loading="lazy" ${imageInteractionAttrs()}><span class="sticker-desc">${sd}</span></div>`;
     } else {
       const url = typeof item === 'string' ? item : (item && item.url ? item.url : '');
       if (/\.(mp4|webm|mov)$/i.test(url)) mediaHtml += `<video src="${escHtml(url)}" controls preload="metadata"></video>`;
@@ -5506,3 +5637,288 @@ async function openWalletPanel() {
 function closeWalletPanel() {
   $('walletPanelOverlay').classList.remove('show');
 }
+
+
+// ═══════════════ 表情包面板 ═══════════════
+var stickerPacks = { groups: [] };
+var stickerCurrentGroup = null;   // null = 全部
+var _stickerLoaded = false;
+
+async function loadStickerPacks() {
+  try {
+    const res = await fetch('/api/stickers');
+    if (!res.ok) return;
+    stickerPacks = await res.json();
+    _stickerLoaded = true;
+    renderStickerTabs();
+    renderStickerGrid();
+    if ($('stickerManageModal').classList.contains('show')) renderStickerManager();
+  } catch (e) { /* ignore */ }
+}
+
+function toggleStickerPanel() {
+  const p = $('stickerPanel');
+  if (p.hidden) {
+    p.hidden = false;
+    if (!_stickerLoaded) loadStickerPacks();
+    else { renderStickerTabs(); renderStickerGrid(); }
+  } else {
+    p.hidden = true;
+  }
+}
+function closeStickerPanel() { $('stickerPanel').hidden = true; }
+
+function renderStickerTabs() {
+  const tabs = $('stickerTabs');
+  if (!tabs) return;
+  const groups = (stickerPacks && stickerPacks.groups) || [];
+  let html = '<button class="sticker-tab' + (stickerCurrentGroup === null ? ' active' : '') + '" onclick="switchStickerGroup(null)">全部</button>';
+  groups.forEach(g => {
+    const n = (g.stickers || []).length;
+    html += '<button class="sticker-tab' + (stickerCurrentGroup === g.id ? ' active' : '') + '" onclick="switchStickerGroup(\'' + escJsSingle(g.id) + '\')">' + escHtml(g.name) + '<em>' + n + '</em></button>';
+  });
+  tabs.innerHTML = html;
+}
+
+function switchStickerGroup(gid) {
+  stickerCurrentGroup = gid;
+  renderStickerTabs();
+  renderStickerGrid();
+}
+
+function renderStickerGrid() {
+  const grid = $('stickerGrid');
+  const empty = $('stickerEmpty');
+  if (!grid || !empty) return;
+  const groups = (stickerPacks && stickerPacks.groups) || [];
+  let stickers = [];
+  if (stickerCurrentGroup === null) {
+    groups.forEach(g => stickers = stickers.concat((g.stickers || []).map(s => Object.assign({ group: g.name }, s))));
+  } else {
+    const g = groups.find(x => x.id === stickerCurrentGroup);
+    stickers = g ? (g.stickers || []).map(s => Object.assign({ group: g.name }, s)) : [];
+  }
+  if (!stickers.length) {
+    grid.innerHTML = '';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  grid.innerHTML = stickers.map(s =>
+    '<button class="sticker-cell" onclick="insertSticker(' + JSON.stringify({ url: s.url, desc: s.desc }).replace(/"/g, '&quot;') + ')" title="' + escHtml(s.desc) + '">' +
+      '<span class="sticker-cell-imgwrap"><img class="sticker-cell-img" src="' + escHtml(s.url) + '" alt="' + escHtml(s.desc) + '" loading="lazy" onerror="this.parentNode.classList.add(\'broken\')"></span>' +
+      '<span class="sticker-cell-desc">' + escHtml(s.desc) + '</span>' +
+    '</button>'
+  ).join('');
+}
+
+function insertSticker(sticker) {
+  // 点表情包 → 在输入框光标处插入 [表情包:描述]，可和文字一起发送
+  const ta = $('input');
+  if (!ta) return;
+  const marker = '[表情包:' + (sticker.desc || '') + ']';
+  const start = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+  const end = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+  ta.value = ta.value.slice(0, start) + marker + ta.value.slice(end);
+  const pos = start + marker.length;
+  try { ta.setSelectionRange(pos, pos); } catch (e) {}
+  autoResize(ta);
+  if (typeof _updateSendBtnState === 'function') _updateSendBtnState();
+  ta.focus();
+  closeStickerPanel();
+  showToast('已插入表情包，可以接着打字一起发送');
+}
+
+// 发送前本地解析 [表情包:描述]，用于即时显示 + 以附件形式提交
+function findStickerLocal(desc) {
+  const groups = (stickerPacks && stickerPacks.groups) || [];
+  for (const g of groups) {
+    for (const s of (g.stickers || [])) if (s.desc === desc) return Object.assign({ group: g.name }, s);
+  }
+  for (const g of groups) {
+    for (const s of (g.stickers || [])) if (s.desc && (s.desc.includes(desc) || desc.includes(s.desc))) return Object.assign({ group: g.name }, s);
+  }
+  return null;
+}
+
+function parseStickerMarkersLocal(text) {
+  const re = /\[表情包:([^\]]+)\]/g;
+  let m, atts = [], out = '', last = 0;
+  while ((m = re.exec(text)) !== null) {
+    out += text.slice(last, m.index);
+    const s = findStickerLocal((m[1] || '').trim());
+    if (s) atts.push({ type: 'sticker', url: s.url, desc: s.desc, group: s.group || '' });
+    else out += m[0];
+    last = m.index + m[0].length;
+  }
+  out += text.slice(last);
+  return { text: out.trim(), atts };
+}
+
+// ── 管理弹窗 ──
+function openStickerManager() {
+  $('stickerManageModal').classList.add('show');
+  if (!_stickerLoaded) loadStickerPacks();
+  else renderStickerManager();
+}
+function closeStickerManager() { $('stickerManageModal').classList.remove('show'); }
+$('stickerManageModal').addEventListener('click', e => { if (e.target === $('stickerManageModal')) closeStickerManager(); });
+
+function renderStickerManager() {
+  const list = $('stickerManageList');
+  const groups = (stickerPacks && stickerPacks.groups) || [];
+  if (!groups.length) {
+    list.innerHTML = '<div class="sticker-manage-empty">还没有分组，先在上面输入组名，点「新建分组」。</div>';
+    return;
+  }
+  list.innerHTML = groups.map(g => {
+    const stickers = g.stickers || [];
+    const cells = stickers.length ? stickers.map(s =>
+      '<span class="sm-cell" title="' + escHtml(s.desc) + '">' +
+        '<img class="sm-cell-img" src="' + escHtml(s.url) + '" alt="' + escHtml(s.desc) + '" loading="lazy" onerror="this.style.opacity=.15">' +
+        '<button class="sm-cell-del" onclick="deleteSticker(\'' + escJsSingle(s.id) + '\')" title="删除">×</button>' +
+      '</span>'
+    ).join('') : '<span class="sm-empty">暂无</span>';
+    return '<div class="sm-group">' +
+      '<div class="sm-group-head">' +
+        '<strong>' + escHtml(g.name) + '</strong>' +
+        '<em>' + stickers.length + ' 个</em>' +
+        '<span class="sm-group-actions">' +
+          '<button class="btn-save" type="button" onclick="pickStickerTxt(\'' + escJsSingle(g.id) + '\')">导入 txt</button>' +
+          '<button class="btn-cancel" type="button" onclick="openAddSticker(\'' + escJsSingle(g.id) + '\')">添加</button>' +
+          '<button class="btn-cancel danger" type="button" onclick="deleteStickerGroup(\'' + escJsSingle(g.id) + '\')">删除组</button>' +
+        '</span>' +
+      '</div>' +
+      '<div class="sm-stickers">' + cells + '</div>' +
+      '<div class="sm-add-form" id="smAdd_' + escJsSingle(g.id) + '" hidden>' +
+        '<input id="smAddDesc_' + escJsSingle(g.id) + '" placeholder="描述，如：开心" maxlength="50">' +
+        '<input id="smAddUrl_' + escJsSingle(g.id) + '" placeholder="图片 URL，https://...">' +
+        '<button class="btn-save" type="button" onclick="addStickerSingle(\'' + escJsSingle(g.id) + '\')">保存</button>' +
+        '<button class="btn-cancel" type="button" onclick="document.getElementById(\'smAdd_' + escJsSingle(g.id) + '\').hidden=true">取消</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function openAddSticker(gid) {
+  const f = $('smAdd_' + gid);
+  if (f) f.hidden = !f.hidden;
+}
+
+function createStickerGroup() {
+  const input = $('stickerNewGroupName');
+  const name = (input.value || '').trim();
+  if (!name) { showToast('请输入组名'); return; }
+  fetch('/api/stickers/groups', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { input.value = ''; stickerPacks = { groups: d.groups }; renderStickerManager(); renderStickerTabs(); showToast('✅ 分组已创建'); }
+    else showToast(d.detail || '创建失败');
+  }).catch(() => showToast('创建失败'));
+}
+
+function deleteStickerGroup(gid) {
+  if (!confirm('确定删除这个分组和里面所有表情包吗？')) return;
+  fetch('/api/stickers/groups/' + gid, { method: 'DELETE' }).then(r => r.json()).then(d => {
+    if (d.ok) { stickerPacks = { groups: d.groups }; renderStickerManager(); renderStickerTabs(); renderStickerGrid(); showToast('已删除分组'); }
+  }).catch(() => showToast('删除失败'));
+}
+
+function deleteSticker(sid) {
+  fetch('/api/stickers/' + sid, { method: 'DELETE' }).then(r => r.json()).then(d => {
+    if (d.ok) { stickerPacks = { groups: d.groups }; renderStickerManager(); renderStickerTabs(); renderStickerGrid(); showToast('已删除'); }
+  }).catch(() => showToast('删除失败'));
+}
+
+function addStickerSingle(gid) {
+  const desc = ($('smAddDesc_' + gid).value || '').trim();
+  const url = ($('smAddUrl_' + gid).value || '').trim();
+  if (!desc || !url) { showToast('请填写描述和 URL'); return; }
+  fetch('/api/stickers/groups/' + gid + '/stickers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ desc, url })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      stickerPacks = { groups: d.groups };
+      $('smAddDesc_' + gid).value = ''; $('smAddUrl_' + gid).value = '';
+      $('smAdd_' + gid).hidden = true;
+      renderStickerManager(); renderStickerTabs(); renderStickerGrid();
+      showToast(d.duplicate ? '⚠️ 已存在相同表情包' : '✅ 已添加');
+    } else showToast(d.detail || '添加失败');
+  }).catch(() => showToast('添加失败'));
+}
+
+function pickStickerTxt(gid) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.txt,text/plain';
+  input.onchange = () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    importStickerTxt(gid, f);
+  };
+  input.click();
+}
+
+async function importStickerTxt(gid, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  showToast('⏳ 正在导入…');
+  try {
+    const res = await fetch('/api/stickers/groups/' + gid + '/import', { method: 'POST', body: fd });
+    const d = await res.json();
+    if (d.ok) {
+      stickerPacks = { groups: d.groups };
+      renderStickerManager(); renderStickerTabs(); renderStickerGrid();
+      let msg = '✅ 导入成功：新增 ' + d.added + ' 个' + (d.skipped ? '，跳过 ' + d.skipped + ' 个' : '');
+      if (d.errors && d.errors.length) msg += '（' + d.errors[0] + '）';
+      showToast(msg);
+    } else showToast(d.detail || '导入失败');
+  } catch (e) { showToast('导入失败：' + e.message); }
+}
+
+// 点击面板外关闭
+document.addEventListener('click', e => {
+  const p = $('stickerPanel');
+  if (!p || p.hidden) return;
+  if (!p.contains(e.target) && e.target !== $('stickerBtn')) closeStickerPanel();
+});
+
+
+// 轻量 toast（聊天页未加载 common.js，这里自给自足）
+var _chatToastTimer = null;
+function showToast(msg) {
+  var t = document.getElementById('commonToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'commonToast';
+    t.className = 'toast-msg';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_chatToastTimer);
+  _chatToastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+}
+
+
+// ── AI 发表情包开关 ──
+function toggleAiStickers() {
+  const t = $('aiStickersToggle');
+  if (!t) return;
+  const on = t.checked;
+  fetch('/api/settings/ai-stickers', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: on })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) showToast(on ? '✅ AI 发表情包已开启' : '已关闭 AI 发表情包');
+    else { t.checked = !on; showToast('保存失败'); }
+  }).catch(() => { t.checked = !on; showToast('保存失败'); });
+}
+function loadAiStickersSetting() {
+  const t = $('aiStickersToggle');
+  if (!t) return;
+  fetch('/api/settings/ai-stickers').then(r => r.json()).then(d => { t.checked = !!d.enabled; }).catch(() => {});
+}
+document.addEventListener('DOMContentLoaded', loadAiStickersSetting);

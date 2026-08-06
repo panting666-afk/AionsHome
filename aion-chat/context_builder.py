@@ -242,6 +242,15 @@ async def build_ability_block(
     if cli_file_text:
         parts.append(cli_file_text.strip())
 
+    # 表情包库：让 AI 知道有哪些表情、可以发 [表情包:描述]
+    try:
+        from routes.stickers import build_sticker_catalog
+        catalog = build_sticker_catalog()
+        if catalog:
+            parts.append(catalog)
+    except Exception:
+        pass
+
     return "\n\n".join(parts)
 
 
@@ -686,7 +695,15 @@ def render_merged_timeline(
         else:
             speaker = sender or "未知说话人"
         label = "当前用户消息" if idx == last_user_idx and sender == "user" else "历史消息"
+        # 表情包消息：把描述补进上下文，让模型始终知道对方发了什么表情（即使带文字）
+        sticker_desc = ""
+        for _att in message_attachments:
+            if isinstance(_att, dict) and _att.get("type") == "sticker":
+                sticker_desc = _att.get("desc", "") or ""
+                break
         content = f"{label} - {speaker}：{content}"
+        if sticker_desc:
+            content += f"[{speaker}发送了表情包：{sticker_desc}]"
         role = "user"
 
         # ── 清洗旧 meta 标签 + 添加精确时间戳 ──

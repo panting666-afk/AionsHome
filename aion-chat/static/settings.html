@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>设置</title>
 <link rel="stylesheet" href="/static/common.css">
+<script src="/static/bubble-theme.js?v=bubble-theme-20260804"></script>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff8359">
@@ -364,6 +365,100 @@
   font-size: 13px;
   text-align: center;
 }
+/* ── 拉取模型列表：多选弹窗 ──────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.modal-overlay.is-open {
+  display: flex;
+}
+.model-pick-modal {
+  background: #1e1b2e;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 580px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+}
+.model-pick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.model-pick-head .route-title {
+  font-size: 15px;
+}
+.model-pick-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-wrap: wrap;
+}
+.model-pick-toolbar .form-input {
+  flex: 1;
+  min-width: 160px;
+}
+.model-pick-count {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  white-space: nowrap;
+}
+.model-pick-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  min-height: 120px;
+  align-content: start;
+}
+.model-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.model-pick-item:hover {
+  background: rgba(255,255,255,0.09);
+}
+.model-pick-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-pick-item input {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.model-pick-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
 .section-actions {
   margin-top: 12px;
   display: flex;
@@ -435,6 +530,297 @@ body[data-theme="light"] .ghost-btn {
     bottom: 10px;
   }
 }
+
+/* ── 外观定制：头像 / 图标 / 背景 ──────────────── */
+.appearance-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  opacity: .7;
+  line-height: 1.6;
+}
+.appearance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.appearance-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0,0,0,.10);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.appearance-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong, var(--accent));
+  box-shadow: 0 12px 30px rgba(0,0,0,.16);
+}
+.appearance-preview {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border-strong, var(--accent));
+  box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  background: rgba(140,140,160,.10);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.appearance-preview.square {
+  border-radius: 22px;
+}
+.appearance-preview.banner {
+  width: 100%;
+  height: 92px;
+  border-radius: 12px;
+}
+.appearance-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.appearance-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.appearance-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.appearance-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+  color: var(--text);
+  background: rgba(255,255,255,.06);
+  text-align: center;
+}
+.appearance-btn:hover {
+  border-color: var(--accent);
+}
+.appearance-btn:active {
+  transform: scale(.96);
+}
+.appearance-btn.primary {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0,0,0,.20);
+}
+.appearance-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.appearance-divider {
+  margin: 20px 0 4px;
+  height: 1px;
+  background: var(--border);
+}
+.appearance-subtitle {
+  margin: 12px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  opacity: .78;
+}
+.home-icons-grid {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+}
+.home-icon-card {
+  padding: 12px 10px 10px;
+  gap: 7px;
+  border-radius: 14px;
+}
+.home-icon-card .appearance-preview {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  border-width: 1.5px;
+}
+.home-icon-card .appearance-name {
+  font-size: 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-icon-card .appearance-actions {
+  gap: 5px;
+}
+.home-icon-card .appearance-btn {
+  padding: 5px 0;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
+/* ── 气泡主题：预设配色 + 自定义 CSS ─────────────── */
+.bubble-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  opacity: .7;
+  line-height: 1.6;
+}
+.bubble-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.bubble-theme-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.bubble-theme-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px rgba(0,0,0,.14);
+}
+.bubble-theme-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,120,90,.25), 0 8px 20px rgba(0,0,0,.14);
+}
+.bubble-theme-swatch {
+  display: flex;
+  gap: 8px;
+}
+.bubble-theme-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,.12);
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.45), inset 0 -2px 4px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.12);
+}
+.bubble-theme-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.bubble-theme-name small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: .6;
+  margin-top: 2px;
+}
+.bubble-css-field {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.bubble-css-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.bubble-css-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.bubble-css-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.bubble-css-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ── 气泡样式库：新建表单 + 删除按钮 ── */
+.bubble-new-style {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.bubble-new-style[hidden] { display: none; }
+.bubble-new-style input {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.bubble-new-style textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  outline: none;
+}
+.bubble-new-style input:focus,
+.bubble-new-style textarea:focus {
+  border-color: var(--accent);
+}
+.bubble-style-del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(207, 34, 46, 0.15);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.bubble-theme-card:hover .bubble-style-del { opacity: 1; }
 </style>
 </head>
 <body>
@@ -492,7 +878,7 @@ body[data-theme="light"] .ghost-btn {
         <span class="summary-chevron">›</span>
       </summary>
       <div class="card-body">
-        <p class="hint">Base URL 可填根域名或 <code>/v1</code>；显示名会进入模型列表。</p>
+        <p class="hint">Base URL 可填根域名或 <code>/v1</code>；填好地址和 Key 后点"⚡ 拉取模型列表"可自动获取全部模型并勾选。</p>
         <div id="customRoutesList" class="route-list"></div>
         <div class="section-actions">
           <button class="action-btn add" type="button" onclick="addCustomRoute()">＋ 添加线路</button>
@@ -523,7 +909,12 @@ body[data-theme="light"] .ghost-btn {
             </div>
             <div class="field full">
               <label class="form-label">模型名称</label>
-              <input class="form-input mono-input" type="text" id="sentinelModelInput" placeholder="例：Qwen/Qwen3.6-35B-A3B" autocomplete="off">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select class="form-input" id="sentinelModelInput">
+                  <option value="">（填写地址和 Key 后点「拉取模型」）</option>
+                </select>
+                <button class="btn-cancel" type="button" onclick="loadSentinelModels()">🔄 拉取模型</button>
+              </div>
             </div>
           </div>
         </div>
@@ -541,7 +932,12 @@ body[data-theme="light"] .ghost-btn {
             </div>
             <div class="field full">
               <label class="form-label">模型名称</label>
-              <input class="form-input mono-input" type="text" id="embeddingModelInput" placeholder="例：Qwen/Qwen3-Embedding-8B" autocomplete="off">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select class="form-input" id="embeddingModelInput">
+                  <option value="">（填写地址和 Key 后点「拉取模型」）</option>
+                </select>
+                <button class="btn-cancel" type="button" onclick="loadEmbeddingModels()">🔄 拉取模型</button>
+              </div>
             </div>
           </div>
         </div>
@@ -634,6 +1030,207 @@ body[data-theme="light"] .ghost-btn {
       </div>
     </details>
 
+    <details class="settings-card" open>
+      <summary>
+        <div class="summary-title">
+          <strong>🎨 外观定制</strong>
+          <span>你的头像、AI 头像、App 图标、聊天与首页背景</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body">
+        <p class="appearance-hint">上传后所有页面立即生效，原图自动备份，可随时恢复默认。建议使用正方形图片，头像会自动裁剪成圆形。</p>
+        <div class="appearance-grid">
+          <div class="appearance-card">
+            <div class="appearance-preview"><img id="pv_user_avatar" src="/public/UserIcon.png" alt="你的头像" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">你的头像</div>
+            <div class="appearance-actions">
+              <button id="btn_user_avatar" class="appearance-btn primary" onclick="pickAppearance('user_avatar')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('user_avatar')">恢复默认</button>
+            </div>
+            <input type="file" id="af_user_avatar" accept="image/*" hidden onchange="doUploadAppearance('user_avatar')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview"><img id="pv_ai_avatar" src="/public/AIIcon.png" alt="AI 头像" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">AI 头像</div>
+            <div class="appearance-actions">
+              <button id="btn_ai_avatar" class="appearance-btn primary" onclick="pickAppearance('ai_avatar')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('ai_avatar')">恢复默认</button>
+            </div>
+            <input type="file" id="af_ai_avatar" accept="image/*" hidden onchange="doUploadAppearance('ai_avatar')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview square"><img id="pv_app_icon" src="/public/icon-192.png" alt="App 图标" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">App 图标</div>
+            <div class="appearance-actions">
+              <button id="btn_app_icon" class="appearance-btn primary" onclick="pickAppearance('app_icon')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('app_icon')">恢复默认</button>
+            </div>
+            <input type="file" id="af_app_icon" accept="image/*" hidden onchange="doUploadAppearance('app_icon')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_chat_bg_dark" src="/public/chat-bg-dark.jpg" alt="聊天黑夜背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">聊天·黑夜</div>
+            <div class="appearance-actions">
+              <button id="btn_chat_bg_dark" class="appearance-btn primary" onclick="pickAppearance('chat_bg_dark')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('chat_bg_dark')">恢复默认</button>
+            </div>
+            <input type="file" id="af_chat_bg_dark" accept="image/*" hidden onchange="doUploadAppearance('chat_bg_dark')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_chat_bg_light" src="/public/chat-bg-light.jpg" alt="聊天白天背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">聊天·白天</div>
+            <div class="appearance-actions">
+              <button id="btn_chat_bg_light" class="appearance-btn primary" onclick="pickAppearance('chat_bg_light')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('chat_bg_light')">恢复默认</button>
+            </div>
+            <input type="file" id="af_chat_bg_light" accept="image/*" hidden onchange="doUploadAppearance('chat_bg_light')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_chatroom_bg_dark" src="/public/chatroom-bg-dark.jpg" alt="聊天室黑夜背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">聊天室·黑夜</div>
+            <div class="appearance-actions">
+              <button id="btn_chatroom_bg_dark" class="appearance-btn primary" onclick="pickAppearance('chatroom_bg_dark')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('chatroom_bg_dark')">恢复默认</button>
+            </div>
+            <input type="file" id="af_chatroom_bg_dark" accept="image/*" hidden onchange="doUploadAppearance('chatroom_bg_dark')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_chatroom_bg_light" src="/public/chatroom-bg-light.jpg" alt="聊天室白天背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">聊天室·白天</div>
+            <div class="appearance-actions">
+              <button id="btn_chatroom_bg_light" class="appearance-btn primary" onclick="pickAppearance('chatroom_bg_light')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('chatroom_bg_light')">恢复默认</button>
+            </div>
+            <input type="file" id="af_chatroom_bg_light" accept="image/*" hidden onchange="doUploadAppearance('chatroom_bg_light')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_home_bg_dark" src="/public/BackGroundN.png" alt="首页黑夜背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">首页·黑夜</div>
+            <div class="appearance-actions">
+              <button id="btn_home_bg_dark" class="appearance-btn primary" onclick="pickAppearance('home_bg_dark')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('home_bg_dark')">恢复默认</button>
+            </div>
+            <input type="file" id="af_home_bg_dark" accept="image/*" hidden onchange="doUploadAppearance('home_bg_dark')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview banner"><img id="pv_home_bg_light" src="/public/BackGround.png" alt="首页白天背景" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">首页·白天</div>
+            <div class="appearance-actions">
+              <button id="btn_home_bg_light" class="appearance-btn primary" onclick="pickAppearance('home_bg_light')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('home_bg_light')">恢复默认</button>
+            </div>
+            <input type="file" id="af_home_bg_light" accept="image/*" hidden onchange="doUploadAppearance('home_bg_light')">
+          </div>
+
+          <div class="appearance-card">
+            <div class="appearance-preview"><img id="pv_video_call_avatar" src="/public/视频来电头像.jpg" alt="视频来电头像" onerror="this.style.opacity=0"></div>
+            <div class="appearance-name">视频来电头像</div>
+            <div class="appearance-actions">
+              <button id="btn_video_call_avatar" class="appearance-btn primary" onclick="pickAppearance('video_call_avatar')">更换</button>
+              <button class="appearance-btn" onclick="resetAppearance('video_call_avatar')">恢复默认</button>
+            </div>
+            <input type="file" id="af_video_call_avatar" accept="image/*" hidden onchange="doUploadAppearance('video_call_avatar')">
+          </div>
+        </div>
+
+        <div class="appearance-divider"></div>
+        <div class="appearance-subtitle">首页 App 图标 · 点击「更换」上传，建议正方形图片</div>
+        <div class="appearance-grid home-icons-grid" id="homeIconsGrid"></div>
+      </div>
+    </details>
+
+    <details class="settings-card" open>
+      <summary>
+        <div class="summary-title">
+          <strong>💬 气泡主题</strong>
+          <span>聊天气泡配色预设 + 自定义 CSS</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body">
+        <p class="bubble-hint">点一个样式就生效（聊天页 + 聊天室同步）。预设是自带的；也可以「新建样式」写一套 CSS 保存，日后随时切回来。</p>
+        <div class="bubble-theme-grid" id="bubbleThemeGrid"></div>
+        <div class="bubble-css-field">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <label style="margin:0">我的样式</label>
+            <button class="btn-save" type="button" onclick="toggleNewBubbleStyle()">＋ 新建样式</button>
+          </div>
+          <div class="bubble-new-style" id="bubbleNewStyle" hidden>
+            <input id="bubbleNewName" placeholder="样式名，如：微信" maxlength="30">
+            <textarea id="bubbleNewCss" rows="5" spellcheck="false" placeholder="写一套 CSS，例如：&#10;.msg-row.user .msg-bubble { background: #95ec69; }&#10;.msg-row.assistant .msg-bubble { background: #fff; }"></textarea>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-save" type="button" onclick="createBubbleStyle()">保存样式</button>
+              <button class="btn-cancel" type="button" onclick="toggleNewBubbleStyle()">取消</button>
+            </div>
+          </div>
+          <p class="hint" id="bubbleStyleListHint" style="margin:8px 0 0">（还没有自己保存的样式，点「＋ 新建样式」创建一个）</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-card">
+      <summary>
+        <div class="summary-title">
+          <strong>🎨 AI 生图</strong>
+          <span>生图开关 + 自定义中转站 API（支持锁脸生图）</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body settings-grid">
+        <div class="field full">
+          <label class="check-field"><input type="checkbox" id="imageGenEnabled"> 启用 AI 生图</label>
+        </div>
+        <div class="field full">
+          <label class="form-label">中转站地址（留空则用 Gemini 官方）</label>
+          <input class="form-input mono-input" type="text" id="imageGenBaseUrl" placeholder="https://api.xxx.com/v1" autocomplete="off">
+        </div>
+        <div class="field full">
+          <label class="form-label">API Key</label>
+          <input class="form-input mono-input" type="password" id="imageGenApiKey" placeholder="sk-..." autocomplete="off">
+        </div>
+        <div class="field full">
+          <label class="form-label">生图模型</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select class="form-input" id="imageGenModel">
+              <option value="">（填写地址后点「拉取模型」）</option>
+            </select>
+            <button class="btn-cancel" type="button" onclick="loadImageGenModels()">🔄 拉取模型</button>
+          </div>
+        </div>
+        <div class="field full">
+          <label class="form-label">图片尺寸</label>
+          <select class="form-input" id="imageGenSize">
+            <option value="1024x1024">1024×1024（方）</option>
+            <option value="1024x1792">1024×1792（竖）</option>
+            <option value="1792x1024">1792×1024（横）</option>
+            <option value="768x768">768×768（小方）</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label class="form-label">锁脸参考图（生图锚点）</label>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+            <img id="faceAnchorPreview" src="/public/生图锚点.jpg?v=face" alt="锁脸参考图" style="width:76px;height:76px;border-radius:12px;object-fit:cover;border:1px solid var(--border);background:rgba(140,140,160,.12);flex-shrink:0;">
+            <button class="btn-save" type="button" onclick="document.getElementById('faceAnchorInput').click()">上传参考图</button>
+            <input type="file" id="faceAnchorInput" accept="image/*" hidden onchange="uploadFaceAnchor(this)">
+          </div>
+          <p class="hint">建议用清晰、正脸、光线好的最近照片；越清楚、脸越大，锁脸越准。</p>
+        </div>
+        <p class="hint full">配置中转站后生图走中转站（锁脸→/images/edits，普通→/images/generations）；失败自动回退 Gemini。锁脸仍用「生图锚点.jpg」做参考图。</p>
+        <div class="section-actions">
+          <button class="btn-save" type="button" onclick="saveImageGenSetting()">保存生图设置</button>
+        </div>
+      </div>
+    </details>
+
   </div>
 </div>
 <script src="/static/theme.js?v=theme-20260606"></script>
@@ -642,6 +1239,340 @@ body[data-theme="light"] .ghost-btn {
 connectCommonWS();
 
 var customModelRoutes = [];
+
+// ── 外观定制：头像 / 图标 / 背景 ──────────────────
+function pickAppearance(type) {
+  var input = document.getElementById('af_' + type);
+  if (input) input.click();
+}
+
+async function doUploadAppearance(type) {
+  var input = document.getElementById('af_' + type);
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  var btn = document.getElementById('btn_' + type);
+  var oldText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '上传中…'; }
+  try {
+    var fd = new FormData();
+    fd.append('file', file);
+    var resp = await fetch('/api/settings/appearance/' + type, { method: 'POST', body: fd });
+    var data = await resp.json();
+    if (data.ok) {
+      var pv = document.getElementById('pv_' + type);
+      if (pv) pv.src = data.preview_url;
+      showToast('✅ ' + data.label + ' 已更新');
+    } else {
+      showToast(data.error || '上传失败');
+    }
+  } catch (e) {
+    showToast('上传失败：' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = oldText; }
+    if (input) input.value = '';
+  }
+}
+
+async function resetAppearance(type) {
+  var btn = document.getElementById('btn_' + type);
+  if (btn) btn.disabled = true;
+  try {
+    var resp = await fetch('/api/settings/appearance/' + type + '/reset', { method: 'POST' });
+    var data = await resp.json();
+    if (data.ok) {
+      var pv = document.getElementById('pv_' + type);
+      if (pv) pv.src = data.preview_url;
+      showToast('🔄 ' + data.label + ' 已恢复默认');
+    } else {
+      showToast(data.error || '恢复失败');
+    }
+  } catch (e) {
+    showToast('恢复失败：' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── 首页 App 图标（与 static/home.html 的 APPS 数组保持同步）──
+var HOME_APPS = [
+  ['chat', '聊天', '/public/funIcon_0005_聊天.png'],
+  ['chatroom', '聊天室', '/public/funIcon_0020_聊天室.png'],
+  ['memory', '记忆库', '/public/funIcon_0006_日记本.png'],
+  ['moments', '朋友圈', '/public/funIcon_0010_朋友圈.png'],
+  ['xhs-lite', '小红书', '/public/funIcon_0024_小红书.png'],
+  ['wishes', '许愿池', '/public/funIcon_0023_许愿池.png'],
+  ['worldbook', '世界书', '/public/funIcon_0007_世界书.png'],
+  ['theater', '小剧场', '/public/funIcon_0009_小剧场.png'],
+  ['dateTheater', '去约会', '/public/funIcon_0026_去约会.png'],
+  ['whisper', '密语时刻', '/public/funIcon_0011_密语时刻.png'],
+  ['alarm', '闹钟', '/public/funIcon_0012_闹钟.png'],
+  ['settings', '设置', '/public/funIcon_0008_设置.png'],
+  ['capabilities', '工具与能力', '/public/funIcon_0025_工具能力.png'],
+  ['app-supervision', '监管', '/public/funIcon_0027_监管.png'],
+  ['camera', '监控摄像头', '/public/funIcon_0014_监控.png'],
+  ['logs', '监控日志', '/public/funIcon_0015_监控日志.png'],
+  ['location', '定位追踪', '/public/funIcon_0013_地图.png'],
+  ['activity', '活动日志', '/public/funIcon_0000_备忘录.png'],
+  ['health', '健康', '/public/funIcon_0003_健康心.png'],
+  ['reading', '陪伴阅读', '/public/funIcon_0016_陪伴阅读.png'],
+  ['ghost-forest', '奥罗斯幽林', '/public/funIcon_0017_奥罗斯幽林.png'],
+  ['gift', '爱的印记', '/public/funIcon_0018_爱的印记.png'],
+  ['fund', '奥罗斯财团', '/public/funIcon_0019_奥罗斯财团.png'],
+  ['playground', '娱乐室', '/public/funIcon_0019_娱乐室.png'],
+  ['doudizhu', '斗地主', '/public/funIcon_0021_斗地主.png'],
+  ['seeky', 'Seeky', '/public/funIcon_0022_Seeky.png']
+];
+
+function renderHomeIcons() {
+  var grid = document.getElementById('homeIconsGrid');
+  if (!grid) return;
+  var html = '';
+  HOME_APPS.forEach(function(a) {
+    var type = 'home_icon_' + a[0];
+    html += '<div class="appearance-card home-icon-card">'
+      + '<div class="appearance-preview square"><img id="pv_' + type + '" src="' + a[2] + '" alt="' + a[1] + '" onerror="this.style.opacity=0"></div>'
+      + '<div class="appearance-name">' + a[1] + '</div>'
+      + '<div class="appearance-actions">'
+      + '<button id="btn_' + type + '" class="appearance-btn primary" onclick="pickAppearance(\'' + type + '\')">更换</button>'
+      + '<button class="appearance-btn" onclick="resetAppearance(\'' + type + '\')">默认</button>'
+      + '</div>'
+      + '<input type="file" id="af_' + type + '" accept="image/*" hidden onchange="doUploadAppearance(\'' + type + '\')">'
+      + '</div>';
+  });
+  grid.innerHTML = html;
+}
+renderHomeIcons();
+
+// ── 气泡样式库：预设 + 已命名样式，随时切换 ──────
+var bubbleCurrentStyle = 'default';
+var _bubbleUserStyles = [];
+
+function bubbleThemeCardHtml(id, name, userBg, aiBg, isUserStyle) {
+  var active = bubbleCurrentStyle === id ? ' active' : '';
+  var dot = '<span class="bubble-theme-dot" style="background:' + (userBg || 'var(--accent)') + '"></span>'
+    + '<span class="bubble-theme-dot" style="background:' + (aiBg || 'var(--ai-bg, #cce3d2)') + '"></span>';
+  var del = isUserStyle ? '<button class="bubble-style-del" onclick="event.stopPropagation();deleteBubbleStyle(\'' + id + '\')" title="删除">×</button>' : '';
+  return '<div class="bubble-theme-card' + active + '" onclick="pickBubbleStyle(\'' + id + '\')">'
+    + del
+    + '<div class="bubble-theme-swatch">' + dot + '</div>'
+    + '<div class="bubble-theme-name">' + name + '</div>'
+    + '</div>';
+}
+
+function renderBubbleThemes() {
+  var grid = document.getElementById('bubbleThemeGrid');
+  if (!grid) return;
+  var themes = window.BUBBLE_THEMES || {};
+  var html = bubbleThemeCardHtml('default', '系统默认', null, null, false);
+  Object.keys(themes).forEach(function (key) {
+    if (key === 'default') return;
+    var t = themes[key];
+    var ubg = t.user ? t.user.bg : (key === 'wechat' ? 'linear-gradient(135deg,#b7f29a,#95ec69)' : null);
+    var abg = t.ai ? t.ai.bg : (key === 'wechat' ? '#ffffff' : null);
+    html += bubbleThemeCardHtml(key, t.name, ubg, abg, false);
+  });
+  (_bubbleUserStyles || []).forEach(function (s) {
+    html += bubbleThemeCardHtml(s.id, s.name, null, null, true);
+  });
+  grid.innerHTML = html;
+  var hint = document.getElementById('bubbleStyleListHint');
+  if (hint) hint.style.display = (_bubbleUserStyles && _bubbleUserStyles.length) ? 'none' : 'block';
+}
+
+function bubbleStyleName(id) {
+  var themes = window.BUBBLE_THEMES || {};
+  if (themes[id]) return themes[id].name;
+  var s = (_bubbleUserStyles || []).find(function (x) { return x.id === id; });
+  return s ? s.name : id;
+}
+
+async function pickBubbleStyle(id) {
+  try {
+    var resp = await fetch('/api/bubble-styles/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      bubbleCurrentStyle = data.active;
+      if (window.applyBubbleTheme) window.applyBubbleTheme(data.active, '');
+      renderBubbleThemes();
+      showToast('✅ 已切换到「' + bubbleStyleName(data.active) + '」');
+    }
+  } catch (e) { showToast('切换失败：' + e.message); }
+}
+
+function toggleNewBubbleStyle() {
+  var el = document.getElementById('bubbleNewStyle');
+  if (el) el.hidden = !el.hidden;
+}
+
+async function createBubbleStyle() {
+  var name = document.getElementById('bubbleNewName').value.trim();
+  var css = document.getElementById('bubbleNewCss').value.trim();
+  if (!name || !css) { showToast('请填写样式名和 CSS'); return; }
+  try {
+    var resp = await fetch('/api/bubble-styles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, css: css })
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      _bubbleUserStyles = data.styles;
+      document.getElementById('bubbleNewName').value = '';
+      document.getElementById('bubbleNewCss').value = '';
+      document.getElementById('bubbleNewStyle').hidden = true;
+      renderBubbleThemes();
+      showToast('✅ 样式「' + name + '」已保存');
+    } else showToast(data.detail || '保存失败');
+  } catch (e) { showToast('保存失败：' + e.message); }
+}
+
+async function deleteBubbleStyle(id) {
+  if (!confirm('确定删除这个样式吗？')) return;
+  try {
+    var resp = await fetch('/api/bubble-styles/' + id, { method: 'DELETE' });
+    var data = await resp.json();
+    if (data.ok) {
+      _bubbleUserStyles = data.styles;
+      bubbleCurrentStyle = data.active;
+      if (window.applyBubbleTheme) window.applyBubbleTheme(data.active, '');
+      renderBubbleThemes();
+      showToast('已删除样式');
+    }
+  } catch (e) { showToast('删除失败'); }
+}
+
+async function loadBubbleStyles() {
+  try {
+    var resp = await fetch('/api/bubble-styles');
+    var data = await resp.json();
+    bubbleCurrentStyle = data.active || 'default';
+    _bubbleUserStyles = data.styles || [];
+  } catch (e) {}
+  renderBubbleThemes();
+}
+loadBubbleStyles();
+
+// ── AI 生图：开关 + 自定义中转站 ──────────────────
+var _imageGenModelSaved = '';
+
+function loadImageGenSetting() {
+  fetch('/api/settings/image-gen').then(r => r.json()).then(d => {
+    $('imageGenEnabled').checked = !!d.image_gen_enabled;
+    $('imageGenBaseUrl').value = d.image_gen_base_url || '';
+    $('imageGenApiKey').value = d.image_gen_api_key || '';
+    _imageGenModelSaved = d.image_gen_model || '';
+    $('imageGenSize').value = d.image_gen_size || '1024x1024';
+    loadImageGenModels();
+  }).catch(() => {});
+}
+
+function loadImageGenModels() {
+  const sel = $('imageGenModel');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">加载中...</option>';
+  const q = '?base_url=' + encodeURIComponent($('imageGenBaseUrl').value.trim())
+    + '&api_key=' + encodeURIComponent($('imageGenApiKey').value.trim());
+  fetch('/api/settings/image-gen/models' + q).then(r => r.json()).then(d => {
+    const models = (d.models || []).slice();
+    if (_imageGenModelSaved && models.indexOf(_imageGenModelSaved) === -1) models.push(_imageGenModelSaved);
+    let html = '<option value="">选择模型</option>';
+    models.forEach(function (m) { html += '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>'; });
+    sel.innerHTML = html;
+    if (_imageGenModelSaved) sel.value = _imageGenModelSaved;
+  }).catch(() => {
+    sel.innerHTML = '<option value="">拉取失败，请填地址后点刷新</option>';
+    if (_imageGenModelSaved) {
+      const opt = document.createElement('option');
+      opt.value = _imageGenModelSaved; opt.textContent = _imageGenModelSaved;
+      sel.appendChild(opt); sel.value = _imageGenModelSaved;
+    }
+  });
+}
+
+function saveImageGenSetting() {
+  fetch('/api/settings/image-gen', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: $('imageGenEnabled').checked,
+      base_url: $('imageGenBaseUrl').value.trim(),
+      api_key: $('imageGenApiKey').value.trim(),
+      model: $('imageGenModel').value.trim(),
+      size: $('imageGenSize').value
+    })
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { showToast('✅ 生图设置已保存'); loadImageGenModels(); }
+    else showToast('保存失败');
+  }).catch(() => showToast('保存失败'));
+}
+loadImageGenSetting();
+
+// ── 哨兵 / 向量：拉取模型列表 → 下拉选择 ────────────
+var _sentinelModelSaved = '';
+var _embeddingModelSaved = '';
+
+function loadSentinelModels() {
+  loadSingleModelInto('sentinel');
+}
+
+function loadEmbeddingModels() {
+  loadSingleModelInto('embedding');
+}
+
+function loadSingleModelInto(kind) {
+  var selectId = kind === 'sentinel' ? 'sentinelModelInput' : 'embeddingModelInput';
+  var baseUrlId = kind === 'sentinel' ? 'sentinelBaseUrlInput' : 'embeddingBaseUrlInput';
+  var apiKeyId = kind === 'sentinel' ? 'sentinelApiKeyInput' : 'embeddingApiKeyInput';
+  var sel = $(selectId);
+  if (!sel) return;
+  var saved = kind === 'sentinel' ? _sentinelModelSaved : _embeddingModelSaved;
+  sel.innerHTML = '<option value="">加载中...</option>';
+  var q = '?base_url=' + encodeURIComponent($(baseUrlId).value.trim())
+    + '&api_key=' + encodeURIComponent($(apiKeyId).value.trim());
+  fetch('/api/settings/custom-routes/models' + q).then(function(r) { return r.json(); }).then(function(d) {
+    var models = (d.models || []).slice();
+    if (saved && models.indexOf(saved) === -1) models.push(saved);
+    var html = '<option value="">选择模型</option>';
+    models.forEach(function(m) { html += '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>'; });
+    sel.innerHTML = html;
+    if (saved) sel.value = saved;
+    if (!d.models || !d.models.length) {
+      showToast((d.error ? '拉取失败：' + d.error : '没有获取到模型，请检查地址和 Key'));
+    } else {
+      showToast('已获取 ' + models.length + ' 个模型，请选择');
+    }
+  }).catch(function() {
+    sel.innerHTML = '<option value="">拉取失败，请填地址和 Key 后重试</option>';
+    if (saved) {
+      var opt = document.createElement('option');
+      opt.value = saved; opt.textContent = saved;
+      sel.appendChild(opt); sel.value = saved;
+    }
+  });
+}
+
+async function uploadFaceAnchor(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const resp = await fetch('/api/settings/face-anchor', { method: 'POST', body: fd });
+    const d = await resp.json();
+    if (d.ok) {
+      const pv = document.getElementById('faceAnchorPreview');
+      if (pv) pv.src = d.preview_url;
+      showToast('✅ 锁脸参考图已更新');
+    } else {
+      showToast(d.error || '上传失败');
+    }
+  } catch (e) { showToast('上传失败：' + e.message); }
+  input.value = '';
+}
 
 function escHtml(value) {
   var div = document.createElement("div");
@@ -757,6 +1688,7 @@ function renderCustomRoutes() {
           '<div class="route-models">' +
             '<div class="model-row-head">' +
               '<div class="route-title">模型配置</div>' +
+              '<button class="ghost-btn" type="button" onclick="fetchRouteModels(' + routeIndex + ')">⚡ 拉取模型列表</button>' +
             '</div>' +
             '<div class="model-list">' +
               modelsHtml +
@@ -812,6 +1744,102 @@ function removeCustomModel(routeIndex, modelIndex) {
   renderCustomRoutes();
 }
 
+// ── 拉取模型列表：输入 Base URL + API Key → 拉取 → 弹窗多选 ──
+var _modelPickRouteIndex = -1;
+var _modelPickAll = [];
+
+function fetchRouteModels(routeIndex) {
+  var route = customModelRoutes[routeIndex];
+  if (!route) return;
+  var baseUrl = (route.base_url || "").trim();
+  var apiKey = (route.api_key || "").trim();
+  if (!baseUrl) { showToast("请先填写该线路的 Base URL"); return; }
+  _modelPickRouteIndex = routeIndex;
+  _modelPickAll = [];
+  $("modelPickSearch").value = "";
+  $("modelPickSelectAll").checked = false;
+  $("modelPickList").innerHTML = '<div class="empty-route">加载中...</div>';
+  $("modelPickCount").textContent = "已选 0 个";
+  openModelPickModal();
+  var q = "?base_url=" + encodeURIComponent(baseUrl) + "&api_key=" + encodeURIComponent(apiKey);
+  fetch("/api/settings/custom-routes/models" + q).then(function(r) { return r.json(); }).then(function(d) {
+    var models = (d.models || []).slice();
+    if (d.error) {
+      $("modelPickList").innerHTML = '<div class="empty-route">拉取失败：' + escHtml(d.error) + '</div>';
+      return;
+    }
+    if (!models.length) {
+      $("modelPickList").innerHTML = '<div class="empty-route">没有获取到模型，请检查 Base URL 和 API Key</div>';
+      return;
+    }
+    var route2 = customModelRoutes[_modelPickRouteIndex];
+    var existing = {};
+    ((route2 && route2.models) || []).forEach(function(m) { var id = (m.model || "").trim(); if (id) existing[id] = true; });
+    _modelPickAll = models.filter(function(m) { return !existing[m]; });
+    if (!_modelPickAll.length) {
+      $("modelPickList").innerHTML = '<div class="empty-route">该线路下的模型都已添加过了</div>';
+      return;
+    }
+    renderModelPickList();
+  }).catch(function() {
+    $("modelPickList").innerHTML = '<div class="empty-route">拉取失败，请检查网络或地址</div>';
+  });
+}
+
+function renderModelPickList() {
+  var keyword = ($("modelPickSearch").value || "").toLowerCase().trim();
+  var selectAll = $("modelPickSelectAll").checked;
+  var visible = _modelPickAll.filter(function(m) {
+    return !keyword || m.toLowerCase().indexOf(keyword) !== -1;
+  });
+  var html = visible.map(function(m) {
+    return '<label class="model-pick-item"><input type="checkbox" value="' + escAttr(m) + '" ' + (selectAll ? "checked" : "") + '> <span>' + escHtml(m) + '</span></label>';
+  }).join("");
+  $("modelPickList").innerHTML = html || '<div class="empty-route">没有匹配的模型</div>';
+  updateModelPickCount();
+}
+
+function updateModelPickCount() {
+  var count = $("modelPickList").querySelectorAll("input[type=checkbox]:checked").length;
+  $("modelPickCount").textContent = "已选 " + count + " 个";
+}
+
+function modelPickToggleAll() {
+  var checked = $("modelPickSelectAll").checked;
+  $("modelPickList").querySelectorAll("input[type=checkbox]").forEach(function(cb) { cb.checked = checked; });
+  updateModelPickCount();
+}
+
+function addPickedModels() {
+  var route = customModelRoutes[_modelPickRouteIndex];
+  if (!route) { closeModelPickModal(); return; }
+  var picked = [];
+  $("modelPickList").querySelectorAll("input[type=checkbox]:checked").forEach(function(cb) { picked.push(cb.value); });
+  if (!picked.length) { showToast("请先勾选要添加的模型"); return; }
+  var existing = {};
+  route.models.forEach(function(md) { var id = (md.model || "").trim(); if (id) existing[id] = true; });
+  // 移除空的模板行，避免添加后残留空白模型
+  route.models = route.models.filter(function(md) { return (md.key || "").trim() || (md.model || "").trim(); });
+  var added = 0;
+  picked.forEach(function(m) {
+    if (existing[m]) return;
+    route.models.push({ key: m, model: m, vision: true, audio: false });
+    added++;
+  });
+  closeModelPickModal();
+  renderCustomRoutes();
+  showToast("✅ 已添加 " + added + " 个模型");
+}
+
+function openModelPickModal() {
+  $("modelPickModal").classList.add("is-open");
+  setTimeout(function() { $("modelPickSearch").focus(); }, 60);
+}
+
+function closeModelPickModal() {
+  $("modelPickModal").classList.remove("is-open");
+}
+
 function collectCustomRoutes() {
   var routes = [];
   var seenModelKeys = new Set();
@@ -853,10 +1881,10 @@ function collectCustomRoutes() {
   $("geminiFreeKeyInput").value = s.gemini_free_key || "";
   $("sentinelBaseUrlInput").value = s.sentinel_base_url || "";
   $("sentinelApiKeyInput").value = s.sentinel_api_key || "";
-  $("sentinelModelInput").value = s.sentinel_model || "";
+  _sentinelModelSaved = s.sentinel_model || "";
   $("embeddingBaseUrlInput").value = s.embedding_base_url || "";
   $("embeddingApiKeyInput").value = s.embedding_api_key || "";
-  $("embeddingModelInput").value = s.embedding_model || "";
+  _embeddingModelSaved = s.embedding_model || "";
   $("sfKeyInput").value = s.siliconflow_key || "";
   $("tavilyApiKeyInput").value = s.tavily_api_key || "";
   $("neteaseMusicUInput").value = s.netease_music_u || "";
@@ -867,6 +1895,8 @@ function collectCustomRoutes() {
   $("luckinShopKeywordInput").value = s.luckin_default_shop_keyword || "";
   customModelRoutes = normalizeRoutesForUi(s.custom_model_routes || []);
   renderCustomRoutes();
+  loadSentinelModels();
+  loadEmbeddingModels();
   refreshPhoneScreenStatus();
   refreshMediaCacheStatus();
 })();
@@ -1011,5 +2041,25 @@ function clearMediaCache() {
   setTimeout(refreshMediaCacheStatus, 500);
 }
 </script>
+
+<!-- 拉取模型列表：多选弹窗 -->
+<div class="modal-overlay" id="modelPickModal" onclick="if(event.target===this)closeModelPickModal()">
+  <div class="model-pick-modal">
+    <div class="model-pick-head">
+      <div class="route-title">拉取模型列表</div>
+      <button class="ghost-btn route-icon-btn danger-btn" type="button" title="关闭" onclick="closeModelPickModal()">×</button>
+    </div>
+    <div class="model-pick-toolbar">
+      <input class="form-input" type="text" id="modelPickSearch" placeholder="搜索模型..." autocomplete="off" oninput="renderModelPickList()">
+      <label class="vision-toggle"><input type="checkbox" id="modelPickSelectAll" onchange="modelPickToggleAll()"> 全选</label>
+      <span id="modelPickCount" class="model-pick-count">已选 0 个</span>
+    </div>
+    <div class="model-pick-list" id="modelPickList"></div>
+    <div class="model-pick-foot">
+      <button class="ghost-btn" type="button" onclick="closeModelPickModal()">取消</button>
+      <button class="action-btn add" type="button" onclick="addPickedModels()">添加选中</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

@@ -656,12 +656,24 @@
     localStorage.setItem("date_tts_voice", state.ttsVoice || "");
   }
 
+  function applyPersonaMode() {
+    const reuse = $("dateReuseMainPersona").checked;
+    // 勾选「复用主聊天人设」时，自定义人设编辑区忽略并置灰
+    $("datePersonaPreset").disabled = reuse;
+    $("datePersona").disabled = reuse;
+    $("datePresetNewBtn").disabled = reuse;
+    $("datePresetSaveBtn").disabled = reuse;
+    $("datePresetDeleteBtn").disabled = reuse;
+  }
+
   function applyAudioControls() {
     $("dateVideoSoundToggle").checked = state.videoSound;
     $("dateVideoVolume").value = Math.round(state.videoVolume * 100);
     $("dateMusicToggle").checked = state.musicEnabled;
     $("dateMusicVolume").value = Math.round(state.musicVolume * 100);
     $("dateTtsToggle").checked = state.ttsEnabled;
+    $("dateReuseMainPersona").checked = !!state.config.reuse_main_persona;
+    applyPersonaMode();
     $("dateVideoMuteBtn").textContent = state.videoSound ? "♪" : "∅";
     const activeVideo = document.querySelector(".date-actor-video.active");
     if (activeVideo) {
@@ -1349,6 +1361,7 @@
     state.config.model_locked = Boolean(state.config.model && state.config.model !== state.chatroomModel);
     state.config.persona = $("datePersona").value.trim();
     state.config.persona_presets = state.personaPresets;
+    state.config.reuse_main_persona = $("dateReuseMainPersona").checked;
     state.ttsEnabled = $("dateTtsToggle").checked;
     state.ttsVoice = $("dateTtsVoice").value;
     state.musicEnabled = $("dateMusicToggle").checked;
@@ -1396,6 +1409,7 @@
     $("dateSettingsBtn").onclick = () => openModal($("dateSettingsModal"));
     $("dateSettingsCloseBtn").onclick = () => closeModal($("dateSettingsModal"));
     $("dateSaveSettingsBtn").onclick = saveSettings;
+    $("dateReuseMainPersona").onchange = applyPersonaMode;
     $("datePersonaPreset").onchange = () => {
       syncPresetsFromConfig();
       state.config.active_persona_id = $("datePersonaPreset").value;

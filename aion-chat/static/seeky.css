@@ -45,7 +45,7 @@ button {
 
 .seeky-app {
   position: relative;
-  height: 100dvh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding: clamp(8px, 1.6vw, 14px);
