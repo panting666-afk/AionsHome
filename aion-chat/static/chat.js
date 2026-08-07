@@ -1106,39 +1106,51 @@ function toggleTTS() {
   }
 }
 
-function changeTTSVoice() {
-  ttsVoiceId = $('ttsVoiceSelect').value;
-  localStorage.setItem('aion_tts_voice', ttsVoiceId);
-  ttsPlaybackActiveAt = Date.now() / 1000;
-  _sendTTSState();
-}
-
-async function refreshTTSVoices() {
-  try {
-    const data = await api("GET", "/api/tts/voices");
-    const sel = $('ttsVoiceSelect');
-    if (data.voices && data.voices.length > 0) {
-      sel.innerHTML = data.voices.map(v => {
-        const name = v.customName || v.uri || 'Unknown';
-        return `<option value="${v.uri}" ${v.uri === ttsVoiceId ? 'selected' : ''}>${name}</option>`;
-      }).join('');
-      // 如果没有选中的音色，默认选第一个
-      if (!ttsVoiceId || !data.voices.find(v => v.uri === ttsVoiceId)) {
-        ttsVoiceId = data.voices[0].uri;
-        localStorage.setItem('aion_tts_voice', ttsVoiceId);
-        sel.value = ttsVoiceId;
-        _sendTTSState();
-      }
-    } else {
-      sel.innerHTML = '<option value="">无可用音色</option>';
-    }
-  } catch(e) {
-    console.error('刷新TTS音色失败:', e);
+// 同步 voice_id 输入框（TTS 只用 voice_id，不用下拉列表）
+function syncTTSVoiceInput() {
+  const input = $('ttsCustomVoiceInput');
+  if (input && ttsVoiceId && input.value !== ttsVoiceId) {
+    input.value = ttsVoiceId;
   }
 }
 
 function privateVoiceCallSpeakerName() {
   return (worldBook && worldBook.ai_name) || "AI";
+}
+
+// 克隆音色：上传音频 → MiniMax 克隆 → 自动选中
+async function cloneTTSVoice(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  showToast('🪄 正在克隆音色，稍等…');
+  try {
+    const resp = await fetch('/api/tts/voice-clone', { method: 'POST', body: fd });
+    const d = await resp.json();
+    if (d.ok && d.voice_id) {
+      ttsVoiceId = d.voice_id;
+      localStorage.setItem('aion_tts_voice', ttsVoiceId);
+      _sendTTSState();
+      syncTTSVoiceInput();
+      showToast('✅ 克隆完成！已选中新音色');
+    } else {
+      showToast(d.error || '克隆失败');
+    }
+  } catch (e) {
+    showToast('克隆失败：' + e.message);
+  }
+  input.value = '';
+}
+
+// 使用 voice_id（手动输入或失焦时生效）
+function applyCustomTTSVoice() {
+  const v = $('ttsCustomVoiceInput').value.trim();
+  if (!v) { showToast('请输入 voice_id'); return; }
+  ttsVoiceId = v;
+  localStorage.setItem('aion_tts_voice', ttsVoiceId);
+  _sendTTSState();
+  showToast('✅ 已使用 voice_id: ' + v);
 }
 
 window.PrivateVoiceCallAdapter = {
@@ -4962,7 +4974,7 @@ function sendSystemNotification(title, body) {
 // 初始化 TTS
 (function initTTS() {
   $('ttsToggle').checked = ttsEnabled;
-  refreshTTSVoices();
+  syncTTSVoiceInput();
 })();
 
 // ══════════════════════════════════════════════════

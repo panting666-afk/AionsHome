@@ -24,7 +24,6 @@ let crMsgDebugData = {};
 let crSystemLogs = [];
 let crSysLogHasUnreadError = false;
 const CR_AMBIENT_LOCAL_ARMED_KEY = 'aion_chatroom_ambient_local_armed';
-const CR_TTS_VOICES_CACHE_KEY = 'chatroom_tts_voices_v1';
 const CR_SETTINGS_SNAPSHOT_PREFIX = 'chatroom_settings_snapshot_v2_';
 const CR_SYNC_SEQ_KEY = 'aion_sync_seq_v1:chatroom';
 let crSettingsDirtyAt = 0;
@@ -817,41 +816,24 @@ function onWhisperToggleChange() {
   crWhisperMode = !!document.getElementById('setWhisperMode')?.checked;
 }
 
-function crApplyTTSVoices(data) {
-  const aionSel = document.getElementById('setTtsAionVoice');
-  const connorSel = document.getElementById('setTtsConnorVoice');
-  if (!aionSel || !connorSel) return;
-  if (data?.voices && data.voices.length > 0) {
-    const opts = data.voices.map(v => ({ uri: v.uri, name: v.customName || v.uri || 'Unknown' }));
-    aionSel.innerHTML = opts.map(o =>
-      `<option value="${o.uri}" ${o.uri === crTtsAionVoice ? 'selected' : ''}>${o.name}</option>`
-    ).join('');
-    connorSel.innerHTML = opts.map(o =>
-      `<option value="${o.uri}" ${o.uri === crTtsConnorVoice ? 'selected' : ''}>${o.name}</option>`
-    ).join('');
-  } else if (!aionSel.options.length || !connorSel.options.length) {
-    aionSel.innerHTML = '<option value="">无可用音色</option>';
-    connorSel.innerHTML = '<option value="">无可用音色</option>';
-  }
+// 同步 voice_id 输入框（TTS 只用 voice_id，不用下拉列表）
+function crSyncTTSVoiceInputs() {
+  const aion = document.getElementById('setTtsAionVoice');
+  const connor = document.getElementById('setTtsConnorVoice');
+  if (aion && aion.value !== crTtsAionVoice) aion.value = crTtsAionVoice;
+  if (connor && connor.value !== crTtsConnorVoice) connor.value = crTtsConnorVoice;
 }
 
-async function crLoadTTSVoices() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(CR_TTS_VOICES_CACHE_KEY) || 'null');
-    if (cached?.data) crApplyTTSVoices(cached.data);
-  } catch(e) {}
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    const resp = await fetch('/api/tts/voices', { signal: controller.signal });
-    clearTimeout(timer);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    crApplyTTSVoices(data);
-    localStorage.setItem(CR_TTS_VOICES_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
-  } catch(e) {
-    console.error('加载TTS音色失败:', e);
-  }
+// 使用 voice_id（手动输入或失焦时生效），持久化到服务端共享
+function crOnTTSVoiceChange() {
+  crTtsAionVoice = document.getElementById('setTtsAionVoice').value.trim();
+  crTtsConnorVoice = document.getElementById('setTtsConnorVoice').value.trim();
+  api('/config', { method: 'PUT', body: JSON.stringify({
+    tts_aion_voice: crTtsAionVoice,
+    tts_connor_voice: crTtsConnorVoice,
+  }) }).catch(() => {});
+  crTtsPlaybackActiveAt = Date.now() / 1000;
+  crSendTTSState();
 }
 
 // ── DOM ──
@@ -3654,8 +3636,7 @@ function crPopulateSettings(room, cfg = {}) {
   if (cfg.tts_aion_voice !== undefined) crTtsAionVoice = cfg.tts_aion_voice || '';
   if (cfg.tts_connor_voice !== undefined) crTtsConnorVoice = cfg.tts_connor_voice || '';
   document.getElementById('setTtsEnabled').checked = crTtsEnabled;
-  if (document.getElementById('setTtsAionVoice')) document.getElementById('setTtsAionVoice').value = crTtsAionVoice;
-  if (document.getElementById('setTtsConnorVoice')) document.getElementById('setTtsConnorVoice').value = crTtsConnorVoice;
+  crSyncTTSVoiceInputs();
   crApplyAmbientVoiceConfig({ ...crCurrentSettingsConfig(), ...cfg });
 
   document.getElementById('setTitle').value = room.title || '';
@@ -3690,7 +3671,6 @@ async function openSettings() {
   document.getElementById('settingsOverlay').classList.add('active');
   const cached = crLoadSettingsSnapshot(roomId);
   crPopulateSettings(cached?.room || currentRoom, cached?.config || crCurrentSettingsConfig());
-  crLoadTTSVoices(); // 音色慢也不阻塞主要设置。
 
   try {
     const result = await api(`/rooms/${roomId}/settings`, { timeoutMs: 10000 });

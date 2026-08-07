@@ -943,64 +943,23 @@
     }
   }
 
-  function renderVoiceOptions(normalized, fallbackVoice = '') {
-    const options = [...normalized.options];
-    const pendingVoice = String(fallbackVoice || '').trim();
-    if (
-      pendingVoice
-      && !options.some((voice) => voice.uri === pendingVoice)
-    ) {
-      options.unshift({
-        uri: pendingVoice,
-        label: '上次待确认请求的音色',
-      });
-    }
-    elements.voiceSelect.replaceChildren();
-    options.forEach((voice) => {
-      const option = document.createElement('option');
-      option.value = voice.uri;
-      option.textContent = voice.label;
-      elements.voiceSelect.append(option);
-    });
-    const selected = options.some(
-      (voice) => voice.uri === pendingVoice,
-    ) ? pendingVoice : normalized.selected;
-    elements.voiceSelect.value = selected || '';
-    elements.voiceSelect.disabled = !selected;
-    state.voicesReady = Boolean(selected);
-    elements.voiceMeta.textContent = selected
+  // 同步 voice_id 输入框（TTS 只用 voice_id，不用下拉列表）
+  function syncVoiceInput() {
+    const voice = String(
+      pendingGeneration?.ttsVoice
+      || rememberedVoice()
+      || '',
+    ).trim();
+    const input = elements.voiceSelect;
+    if (input && input.value !== voice) input.value = voice;
+    state.voicesReady = Boolean(voice);
+    elements.voiceMeta.textContent = voice
       ? '三个人的全部英文都会使用这个音色。'
-      : '没有可用音色，请先配置硅基流动音色。';
-    if (selected) rememberVoice(selected);
+      : '粘贴音色 ID 后即可朗读。';
     if (!state.generating) {
-      elements.generateSubmit.disabled = !state.voicesReady;
+      elements.generateSubmit.disabled = !voice;
     }
-  }
-
-  async function loadVoiceOptions() {
-    elements.voiceSelect.disabled = true;
-    elements.voiceMeta.textContent = '正在读取可用音色…';
-    const preferred = rememberedVoice();
-    try {
-      const payload = await requestJson('/api/tts/voices');
-      renderVoiceOptions(
-        normalizeVoiceOptions(payload, preferred),
-        pendingGeneration?.ttsVoice || '',
-      );
-    } catch (error) {
-      if (pendingGeneration?.ttsVoice) {
-        renderVoiceOptions(
-          { options: [], selected: '' },
-          pendingGeneration.ttsVoice,
-        );
-        elements.voiceMeta.textContent = (
-          '音色列表暂时不可用，将继续重试上次待确认请求。'
-        );
-      } else {
-        renderVoiceOptions({ options: [], selected: '' });
-        elements.voiceMeta.textContent = error.message;
-      }
-    }
+    if (voice) rememberVoice(voice);
   }
 
   async function loadAll(options) {
@@ -1580,7 +1539,7 @@
     elements.generateError.hidden = true;
     elements.generateError.textContent = '';
     elements.generateDialog.showModal();
-    if (!state.voicesReady) loadVoiceOptions();
+    if (!state.voicesReady) syncVoiceInput();
     const selected = elements.actorChoices.querySelector(
       'input[name="generator"]:checked',
     );
@@ -1987,7 +1946,7 @@
     bindEvents();
     render();
     loadAll();
-    loadVoiceOptions();
+    syncVoiceInput();
   }
 
   if (document.readyState === 'loading') {

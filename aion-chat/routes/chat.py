@@ -237,20 +237,33 @@ def _extract_reply_stickers(text: str, enabled: bool | None = None) -> tuple[str
     return text, atts
 
 
+# 推送正文要剥掉的标记：表情包、内心旁白、各种系统指令（不该显示在通知里）
+_PUSH_STRIP_RE = re.compile(
+    r'\[表情包:[^\]]*\]|\[心里嘀咕[：:][^\]]*\]|'
+    r'\[(?:MUSIC|ALARM|REMINDER|MONITOR|SCHEDULE_DEL|SCHEDULE_LIST|TOY|HEART|MEMORY|'
+    r'WEB_SEARCH|WEB_EXTRACT|SELFIE|DRAW|SONG|CAM_CHECK|POI_SEARCH|PET|MOMENT|WISH|'
+    r'TRANSFER|HUG|BAND|APP_SUPERVISION|HOME|LOCK|VIDEO)[^]]*\]',
+    re.IGNORECASE,
+)
+
+
 def _push_new_ai_message(content: str, force: bool = False):
-    """AI 回复生成后：若用户没有任何在线连接（App 未打开），发一条系统推送。
-    force=True 时无视在线连接，强制推送（用于定时主动消息等需要锁屏提醒的场景）。"""
+    """AI 回复生成后：若用户没有任何在线连接（App 未打开），发系统推送。
+    推送内容 = 真实对话气泡（去掉表情包/内心OS/指令标记），一条气泡一条通知。
+    force=True 时无视在线连接，强制推送（用于定时主动消息等锁屏提醒）。"""
     try:
         from ws import manager
         if manager.active and not force:
             return
         from routes.push import send_web_push_async
-        body = STICKER_CMD_PATTERN.sub("", content or "").strip().replace("\n", " ").replace("<meta>", "")[:120]
-        send_web_push_async(
-            load_worldbook().get("ai_name") or "AI",
-            body or "给你发了条消息",
-            {"url": "/chat"},
-        )
+        ai_name = load_worldbook().get("ai_name") or "AI"
+        clean = _PUSH_STRIP_RE.sub("", content or "")
+        clean = clean.replace("<meta>", "").strip()
+        bubbles = [b.strip() for b in clean.split("\n") if b.strip()]
+        if not bubbles:
+            bubbles = [clean[:120]] if clean else ["给你发了条消息"]
+        for b in bubbles[:5]:  # 最多 5 条，避免刷屏
+            send_web_push_async(ai_name, b[:120], {"url": "/chat"})
     except Exception:
         pass
 

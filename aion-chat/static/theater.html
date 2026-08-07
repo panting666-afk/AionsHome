@@ -284,7 +284,7 @@ body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-se
             </label>
           </div>
           <label>音色</label>
-          <select id="ttsVoiceSelect" onchange="changeTTSVoice()"></select>
+          <input type="text" id="ttsVoiceInput" placeholder="粘贴音色 ID，如 male-qn-qingse / khb19961022_01" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:13px;border-radius:6px;border:1px solid var(--border, #333);background:var(--surface2, #1e1e1e);color:var(--text, #eee);outline:none" onchange="applyCustomTTSVoice()">
         </div>
 
         <!-- 角色管理 -->
@@ -428,8 +428,8 @@ async function init() {
   var savedVoice = localStorage.getItem('theater_tts_voice');
   if (savedVoice) ttsVoice = savedVoice;
 
-  // 加载 TTS 音色列表
-  await loadTTSVoices();
+  // 同步 voice_id 输入框
+  syncTTSVoiceInput();
 
   // 加载角色
   personas = await api('GET', '/api/theater/personas');
@@ -452,30 +452,12 @@ function populateModelSelects() {
   $('modelSelect').innerHTML = opts;
 }
 
-/* ── TTS 音色加载 ── */
-async function loadTTSVoices() {
-  try {
-    const res = await api('GET', '/api/tts/voices');
-    const sel = $('ttsVoiceSelect');
-    sel.innerHTML = '';
-    const voices = res.voices || (Array.isArray(res) ? res : []);
-    if (voices.length) {
-      voices.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v.uri || v.customized_model_id || v.name || '';
-        opt.textContent = v.customName || v.uri || v.name || '未知';
-        sel.appendChild(opt);
-      });
-    } else {
-      sel.innerHTML = '<option value="">无可用音色</option>';
-    }
-    if (ttsVoice && [...sel.options].some(o => o.value === ttsVoice)) {
-      sel.value = ttsVoice;
-    } else if (sel.options.length && sel.options[0].value) {
-      ttsVoice = sel.options[0].value;
-    }
-    localStorage.setItem('theater_tts_voice', ttsVoice);
-  } catch(e) {}
+/* ── TTS 音色：同步 voice_id 输入框 ── */
+function syncTTSVoiceInput() {
+  const input = $('ttsVoiceInput');
+  if (input && ttsVoice && input.value !== ttsVoice) {
+    input.value = ttsVoice;
+  }
 }
 
 function toggleTTS() {
@@ -486,8 +468,11 @@ function toggleTTS() {
   if (!ttsEnabled) stopTTSPlayback();
 }
 
-function changeTTSVoice() {
-  ttsVoice = $('ttsVoiceSelect').value;
+// 使用 voice_id（手动输入或失焦时生效）
+function applyCustomTTSVoice() {
+  const v = $('ttsVoiceInput').value.trim();
+  if (!v) { showToast('请输入 voice_id'); return; }
+  ttsVoice = v;
   localStorage.setItem('theater_tts_voice', ttsVoice);
   ttsPlaybackActiveAt = Date.now() / 1000;
   sendTTSState();

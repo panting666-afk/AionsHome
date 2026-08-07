@@ -1032,6 +1032,40 @@ body[data-theme="light"] .ghost-btn {
       </div>
     </details>
 
+    <details class="settings-card">
+      <summary>
+        <div class="summary-title">
+          <strong>🎙️ MiniMax TTS（语音合成 + 音色克隆）</strong>
+          <span>用 MiniMax 朗读 AI 回复，可克隆专属声音，支持中英文</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body">
+        <p class="hint">填好 API Key 和 Group ID（platform.minimaxi.com 获取）后，在聊天页 ⚙ 的"语音合成"里选音色；点"🪄 克隆音色"可上传音频克隆专属声音。</p>
+        <div class="settings-grid">
+          <div class="field">
+            <label class="form-label">MiniMax API Key</label>
+            <input class="form-input mono-input" type="password" id="minimaxApiKeyInput" placeholder="输入 MiniMax API Key" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="form-label">MiniMax Group ID</label>
+            <input class="form-input mono-input" type="text" id="minimaxGroupIdInput" placeholder="输入 MiniMax Group ID" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="form-label">TTS 模型</label>
+            <select class="form-input" id="minimaxTtsModelInput">
+              <option value="speech-2.8-hd">speech-2.8-hd（最新·高清）</option>
+              <option value="speech-2.8-turbo">speech-2.8-turbo（最新·快速）</option>
+              <option value="speech-2.6-hd">speech-2.6-hd（高清）</option>
+              <option value="speech-2.6-turbo">speech-2.6-turbo（快速）</option>
+              <option value="speech-02-hd">speech-02-hd</option>
+              <option value="speech-02-turbo">speech-02-turbo</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </details>
+
     <details id="mediaCacheSection" class="settings-card" style="display:none">
       <summary>
         <div class="summary-title">
@@ -1565,7 +1599,13 @@ function loadSingleModelInto(kind) {
   // 优先保留用户当前在下拉框里选中的值；没选过时才用已保存的
   var saved = kind === 'sentinel' ? _sentinelModelSaved : _embeddingModelSaved;
   var current = sel.value || saved;
-  sel.innerHTML = '<option value="">加载中...</option>';
+  // 立即回显已保存的模型（中转站慢/拉取失败时也能看到，避免"要重新选"）
+  if (current) {
+    sel.innerHTML = '<option value="' + escAttr(current) + '">' + escHtml(current) + '</option>';
+    sel.value = current;
+  } else {
+    sel.innerHTML = '<option value="">（填写地址和 Key 后点「拉取模型」）</option>';
+  }
   var q = '?base_url=' + encodeURIComponent($(baseUrlId).value.trim())
     + '&api_key=' + encodeURIComponent($(apiKeyId).value.trim());
   fetch('/api/settings/custom-routes/models' + q).then(function(r) { return r.json(); }).then(function(d) {
@@ -1574,20 +1614,30 @@ function loadSingleModelInto(kind) {
     var html = '<option value="">选择模型</option>';
     models.forEach(function(m) { html += '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>'; });
     sel.innerHTML = html;
-    if (current) sel.value = current;
+    if (current) _selectModelOption(sel, current);
     if (!d.models || !d.models.length) {
       showToast((d.error ? '拉取失败：' + d.error : '没有获取到模型，请检查地址和 Key'));
     } else {
       showToast('已获取 ' + models.length + ' 个模型，请选择');
     }
   }).catch(function() {
-    sel.innerHTML = '<option value="">拉取失败，请填地址和 Key 后重试</option>';
+    // 拉取失败：保留已保存的模型
     if (current) {
       var opt = document.createElement('option');
       opt.value = current; opt.textContent = current;
       sel.appendChild(opt); sel.value = current;
     }
   });
+}
+
+// 选中指定值的 option，兼容特殊字符（如 [gcli]...[不补]）导致 value 匹配失败的情况
+function _selectModelOption(sel, val) {
+  sel.value = val;
+  if (sel.value !== val) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === val) { sel.options[i].selected = true; break; }
+    }
+  }
 }
 
 async function uploadFaceAnchor(input) {
@@ -1930,6 +1980,9 @@ function collectCustomRoutes() {
   $("luckinShopKeywordInput").value = s.luckin_default_shop_keyword || "";
   $("proactiveMsgEnabledInput").checked = !!s.proactive_msg_enabled;
   hydrateProactiveInterval(s.proactive_msg_interval_min != null ? s.proactive_msg_interval_min : 60);
+  $("minimaxApiKeyInput").value = s.minimax_api_key || "";
+  $("minimaxGroupIdInput").value = s.minimax_group_id || "";
+  $("minimaxTtsModelInput").value = s.minimax_tts_model || "speech-2.8-hd";
   customModelRoutes = normalizeRoutesForUi(s.custom_model_routes || []);
   renderCustomRoutes();
   loadSentinelModels();
@@ -2001,7 +2054,10 @@ async function saveSettings() {
     luckin_default_shop_keyword: $("luckinShopKeywordInput").value.trim(),
     custom_model_routes: customRoutes,
     proactive_msg_enabled: $("proactiveMsgEnabledInput").checked,
-    proactive_msg_interval_min: currentProactiveIntervalMin()
+    proactive_msg_interval_min: currentProactiveIntervalMin(),
+    minimax_api_key: $("minimaxApiKeyInput").value.trim(),
+    minimax_group_id: $("minimaxGroupIdInput").value.trim(),
+    minimax_tts_model: $("minimaxTtsModelInput").value
   });
   customModelRoutes = normalizeRoutesForUi(customRoutes, collapsedState);
   renderCustomRoutes();

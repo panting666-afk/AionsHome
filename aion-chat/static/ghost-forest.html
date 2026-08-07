@@ -74,7 +74,7 @@ body { background: var(--bg); }
   display: block;
   margin-bottom: 6px;
 }
-.tts-voice-popup select {
+.tts-voice-popup input[type="text"] {
   width: 100%;
   padding: 8px;
   background: var(--surface2);
@@ -82,8 +82,9 @@ body { background: var(--bg); }
   border-radius: 8px;
   color: var(--text);
   font-size: 13px;
+  box-sizing: border-box;
 }
-.tts-voice-popup select:focus { outline: none; border-color: var(--accent); }
+.tts-voice-popup input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
 /* ── 主内容区 ── */
 .content {
@@ -994,7 +995,7 @@ body { background: var(--bg); }
   <!-- TTS 语音选择弹窗 -->
   <div class="tts-voice-popup" id="ttsVoicePopup">
     <label>🎵 选择语音</label>
-    <select id="gfTTSVoiceSelect" onchange="onGFTTSVoiceChange(this.value)"></select>
+    <input type="text" id="gfTTSVoiceInput" placeholder="粘贴音色 ID，如 male-qn-qingse / khb19961022_01" onchange="applyGFTTSVoice()">
   </div>
 
   <div class="content" id="content">
@@ -2646,7 +2647,6 @@ async function sendTheaterChat() {
 let gfTTSEnabled = localStorage.getItem('gf_tts_enabled') === 'true';
 let gfTTSVoice = localStorage.getItem('gf_tts_voice') || '';
 let gfTTSAudio = new Audio();
-let gfTTSVoices = [];
 
 function _updateTTSToggleUI() {
   const btn = document.getElementById('ttsToggleBtn');
@@ -2670,42 +2670,28 @@ function toggleGFTTS(e) {
 function showTTSVoicePopup() {
   const popup = document.getElementById('ttsVoicePopup');
   popup.classList.toggle('show');
-  if (popup.classList.contains('show') && gfTTSVoices.length === 0) {
-    loadTTSVoices();
+  if (popup.classList.contains('show')) {
+    syncTTSVoiceInput();
   }
 }
 
-async function loadTTSVoices() {
-  try {
-    const data = await api('GET', '/api/tts/voices');
-    gfTTSVoices = (data && data.voices) ? data.voices : [];
-    const sel = document.getElementById('gfTTSVoiceSelect');
-    if (gfTTSVoices.length > 0) {
-      sel.innerHTML = gfTTSVoices.map(v => {
-        const label = v.customName || v.uri || 'Unknown';
-        return `<option value="${escHtml(v.uri)}" ${v.uri === gfTTSVoice ? 'selected' : ''}>${escHtml(label)}</option>`;
-      }).join('');
-      if (!gfTTSVoice || !gfTTSVoices.find(v => v.uri === gfTTSVoice)) {
-        gfTTSVoice = gfTTSVoices[0].uri;
-        localStorage.setItem('gf_tts_voice', gfTTSVoice);
-        sel.value = gfTTSVoice;
-      }
-    } else {
-      sel.innerHTML = '<option value="">无可用音色</option>';
-    }
-  } catch (e) {
-    showToast('加载语音列表失败');
+// 同步 voice_id 输入框
+function syncTTSVoiceInput() {
+  const input = document.getElementById('gfTTSVoiceInput');
+  if (input && gfTTSVoice && input.value !== gfTTSVoice) {
+    input.value = gfTTSVoice;
   }
 }
 
-function onGFTTSVoiceChange(val) {
-  gfTTSVoice = val;
-  localStorage.setItem('gf_tts_voice', val);
-  if (val) {
-    gfTTSEnabled = true;
-    localStorage.setItem('gf_tts_enabled', 'true');
-    _updateTTSToggleUI();
-  }
+// 使用 voice_id（手动输入或失焦时生效）
+function applyGFTTSVoice() {
+  const v = document.getElementById('gfTTSVoiceInput').value.trim();
+  if (!v) { showToast('请输入 voice_id'); return; }
+  gfTTSVoice = v;
+  localStorage.setItem('gf_tts_voice', v);
+  gfTTSEnabled = true;
+  localStorage.setItem('gf_tts_enabled', 'true');
+  _updateTTSToggleUI();
   document.getElementById('ttsVoicePopup').classList.remove('show');
 }
 

@@ -61,6 +61,9 @@ class SettingsUpdate(BaseModel):
     custom_model_routes: Optional[list[Dict[str, Any]]] = None
     proactive_msg_enabled: Optional[bool] = None
     proactive_msg_interval_min: Optional[int] = None
+    minimax_api_key: Optional[str] = None
+    minimax_group_id: Optional[str] = None
+    minimax_tts_model: Optional[str] = None
 
 class HomeLayoutUpdate(BaseModel):
     version: Optional[int] = 2
@@ -120,6 +123,10 @@ async def get_settings():
         "custom_model_routes": normalize_custom_model_routes(SETTINGS.get("custom_model_routes")),
         "proactive_msg_enabled": SETTINGS.get("proactive_msg_enabled", False),
         "proactive_msg_interval_min": int(SETTINGS.get("proactive_msg_interval_min", 60) or 60),
+        "minimax_api_key": SETTINGS.get("minimax_api_key", ""),
+        "minimax_group_id": SETTINGS.get("minimax_group_id", ""),
+        "minimax_tts_model": SETTINGS.get("minimax_tts_model", "speech-2.8-hd"),
+        "minimax_api_key_masked": mask(SETTINGS.get("minimax_api_key", "")),
         "gemini_key_masked": mask(SETTINGS.get("gemini_key", "")),
         "siliconflow_key_masked": mask(SETTINGS.get("siliconflow_key", "")),
         "gemini_free_key_masked": mask(SETTINGS.get("gemini_free_key", "")),
@@ -184,6 +191,12 @@ async def update_settings(body: SettingsUpdate):
         SETTINGS["proactive_msg_enabled"] = bool(body.proactive_msg_enabled)
     if body.proactive_msg_interval_min is not None:
         SETTINGS["proactive_msg_interval_min"] = max(0, int(body.proactive_msg_interval_min))
+    if body.minimax_api_key is not None:
+        SETTINGS["minimax_api_key"] = body.minimax_api_key.strip()
+    if body.minimax_group_id is not None:
+        SETTINGS["minimax_group_id"] = body.minimax_group_id.strip()
+    if body.minimax_tts_model is not None:
+        SETTINGS["minimax_tts_model"] = body.minimax_tts_model.strip()
     save_settings(SETTINGS)
     if luckin_changed:
         try:
@@ -649,30 +662,17 @@ class TTSRequest(BaseModel):
 
 @router.post("/api/tts")
 async def tts_synthesize(body: TTSRequest):
-    key = get_key("siliconflow")
-    if not key:
-        return Response(content=json.dumps({"error": "未配置硅基流动 API Key"}), status_code=400, media_type="application/json")
+    from tts import _minimax_synthesize
+    if not (SETTINGS.get("minimax_api_key") or "").strip():
+        return Response(content=json.dumps({"error": "未配置 MiniMax API Key"}), status_code=400, media_type="application/json")
     if not body.text.strip():
         return Response(content=json.dumps({"error": "文本不能为空"}), status_code=400, media_type="application/json")
     if not body.voice:
         return Response(content=json.dumps({"error": "未选择语音"}), status_code=400, media_type="application/json")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                "https://api.siliconflow.cn/v1/audio/speech",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={
-                    "model": "FunAudioLLM/CosyVoice2-0.5B",
-                    "input": body.text.strip(),
-                    "voice": body.voice,
-                    "response_format": "mp3",
-                    "speed": 1.0,
-                    "gain": 0
-                }
-            )
-        if resp.status_code != 200:
-            return Response(content=json.dumps({"error": f"TTS API 错误: {resp.status_code}"}), status_code=502, media_type="application/json")
-        audio_data = resp.content
+        audio_data = await _minimax_synthesize(body.text.strip(), body.voice, timeout=30)
+        if not audio_data:
+            return Response(content=json.dumps({"error": "TTS 合成失败，请检查音色或 MiniMax 配置"}), status_code=502, media_type="application/json")
         # 如果提供了 msg_id，将音频缓存到服务器
         if body.msg_id:
             import re
@@ -711,22 +711,115 @@ async def theater_tts_audio(msg_id: str):
 
 @router.get("/api/tts/voices")
 async def tts_voice_list():
-    key = get_key("siliconflow")
+    from tts import _minimax_key, _minimax_group_id, MINIMAX_TTS_BASE
+    key = _minimax_key()
     if not key:
-        return {"voices": [], "error": "未配置硅基流动 API Key"}
+        return {"voices": [], "error": "未配置 MiniMax API Key"}
+    url = f"{MINIMAX_TTS_BASE}/get_voice"
+    group_id = _minimax_group_id()
+    if group_id:
+        url += f"?GroupId={group_id}"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                "https://api.siliconflow.cn/v1/audio/voice/list",
-                headers={"Authorization": f"Bearer {key}"}
+            resp = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"voice_type": "all"},
             )
         if resp.status_code != 200:
-            return {"voices": [], "error": "获取音色列表失败"}
+            return {"voices": [], "error": f"获取音色列表失败 ({resp.status_code})"}
         data = resp.json()
-        voices = data.get("result") or data.get("voices") or data.get("data") or []
+        raw = list((data.get("system_voice") or []) or []) + list((data.get("voice_cloning") or []) or [])
+        voices = []
+        for v in raw:
+            if not isinstance(v, dict):
+                continue
+            vid = str(v.get("voice_id") or v.get("uri") or "")
+            if not vid:
+                continue
+            name = str(v.get("voice_name") or v.get("name") or vid)
+            lang = str(v.get("language") or "")
+            label = f"{name} · {lang}" if lang else name
+            voices.append({
+                "uri": vid,
+                "customName": label,
+                "name": name,
+                "language": lang,
+                "type": "cloned" if v in (data.get("voice_cloning") or []) else "system",
+            })
         return {"voices": voices}
     except Exception as e:
         return {"voices": [], "error": str(e)}
+
+
+# ── MiniMax 音色克隆 ─────────────────────────────
+@router.post("/api/tts/voice-clone")
+async def tts_voice_clone(file: UploadFile = File(...)):
+    from tts import _minimax_key, _minimax_group_id, MINIMAX_TTS_BASE
+    key = _minimax_key()
+    if not key:
+        return {"ok": False, "error": "未配置 MiniMax API Key"}
+    group_id = _minimax_group_id()
+
+    def _url(path: str) -> str:
+        u = f"{MINIMAX_TTS_BASE}{path}"
+        return f"{u}?GroupId={group_id}" if group_id else u
+
+    content = await file.read()
+    if not content:
+        return {"ok": False, "error": "音频文件为空"}
+    try:
+        # 1. 上传克隆样本音频
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(
+                _url("/files/upload"),
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": (file.filename or "voice.mp3", content, file.content_type or "audio/mpeg")},
+                data={"purpose": "voice_clone"},
+            )
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"音频上传失败 ({resp.status_code})"}
+            file_id = ((resp.json().get("file") or {}).get("file_id") or "")
+            if not file_id:
+                return {"ok": False, "error": f"上传未返回 file_id: {resp.text[:150]}"}
+        # 2. 克隆音色
+        import time as _t
+        voice_id = f"voice_{int(_t.time() * 1000)}"
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(
+                _url("/voice_clone"),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"file_id": file_id, "voice_id": voice_id},
+            )
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"克隆失败 ({resp.status_code}): {resp.text[:150]}"}
+        return {"ok": True, "voice_id": voice_id, "voice_name": voice_id}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.delete("/api/tts/voice-clone/{voice_id}")
+async def tts_voice_clone_delete(voice_id: str):
+    from tts import _minimax_key, _minimax_group_id, MINIMAX_TTS_BASE
+    key = _minimax_key()
+    if not key:
+        return {"ok": False, "error": "未配置 MiniMax API Key"}
+    url = f"{MINIMAX_TTS_BASE}/delete_voice"
+    group_id = _minimax_group_id()
+    if group_id:
+        url += f"?GroupId={group_id}"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"voice_id": voice_id},
+            )
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"删除失败 ({resp.status_code})"}
+            return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ── 外观定制：头像 / 图标 / 背景图 ─────────────────

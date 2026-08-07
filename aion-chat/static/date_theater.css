@@ -824,7 +824,8 @@ input[type="range"] {
 .field input,
 .field select,
 .field textarea,
-.switch-row select {
+.switch-row select,
+.switch-row input[type="text"] {
   width: 100%;
   border: 1px solid rgba(222, 186, 112, .38);
   border-radius: 6px;
@@ -835,7 +836,8 @@ input[type="range"] {
 
 .field input,
 .field select,
-.switch-row select {
+.switch-row select,
+.switch-row input[type="text"] {
   height: 34px;
   padding: 0 10px;
   font-size: 13px;

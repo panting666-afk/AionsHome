@@ -567,22 +567,21 @@
     updateReviewButton();
   }
 
-  async function loadTTSVoices() {
-    const sel = $("dateTtsVoice");
-    sel.innerHTML = `<option value="">默认音色</option>`;
-    try {
-      const data = await api("GET", "/api/tts/voices");
-      const voices = data.voices || [];
-      for (const voice of voices) {
-        const id = voice.uri || voice.id || voice.name || voice;
-        const name = voice.name || voice.uri || voice.id || voice;
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = name;
-        sel.appendChild(opt);
-      }
-      if (state.ttsVoice) sel.value = state.ttsVoice;
-    } catch (e) {}
+  // 同步 voice_id 输入框（TTS 只用 voice_id，不用下拉列表）
+  function syncTTSVoiceInput() {
+    const input = $("dateTtsVoice");
+    if (input && state.ttsVoice && input.value !== state.ttsVoice) {
+      input.value = state.ttsVoice;
+    }
+  }
+
+  // 使用 voice_id（手动输入或失焦时生效）
+  function applyCustomTTSVoice() {
+    const v = $("dateTtsVoice").value.trim();
+    if (!v) { setStatus("请输入 voice_id"); return; }
+    state.ttsVoice = v;
+    saveLocalAudioSettings();
+    syncTTSVoiceInput();
   }
 
   function normalizePreset(item, index) {
@@ -1489,6 +1488,7 @@
         state.musicAudio.pause();
       }
     };
+    $("dateTtsVoice").onchange = applyCustomTTSVoice;
     $("dateMusicVolume").oninput = () => {
       state.musicVolume = Number($("dateMusicVolume").value) / 100;
       saveLocalAudioSettings();
@@ -1548,7 +1548,7 @@
     } catch (e) {
       setStatus("素材加载失败");
     }
-    await loadTTSVoices();
+    syncTTSVoiceInput();
     applyAudioControls();
     renderMode();
   }

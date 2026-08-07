@@ -55,6 +55,7 @@ button {
 
 button:focus-visible,
 select:focus-visible,
+input[type="text"]:focus-visible,
 summary:focus-visible,
 .home-back-link:focus-visible {
   outline: 3px solid var(--focus);
@@ -943,14 +944,16 @@ dialog::backdrop {
   line-height: 1.3;
 }
 
-.form-section select {
+.form-section select,
+.form-section input[type="text"] {
   width: 100%;
   min-height: 3rem;
-  padding: 0 2.7rem 0 0.9rem;
+  padding: 0 0.9rem;
   border: 1px solid #decabe;
   border-radius: 0.8rem;
   color: #544440;
   background: #fffdf8;
+  box-sizing: border-box;
 }
 
 .context-meta,

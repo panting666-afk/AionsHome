@@ -5,12 +5,12 @@
 - 通过 WebSocket 推送音频 URL 给前端顺序播放
 """
 
-import re, asyncio, logging, time
+import re, asyncio, logging, time, base64
 from collections import deque
 from pathlib import Path
 import httpx
 
-from config import get_key, TTS_CACHE_DIR, TTS_CACHE_MAX_BYTES
+from config import SETTINGS, TTS_CACHE_DIR, TTS_CACHE_MAX_BYTES
 
 log = logging.getLogger("tts")
 
@@ -183,30 +183,88 @@ def split_text_for_tts(text: str, *, min_chars: int = 300, max_chars: int = 500)
     return segments
 
 
+MINIMAX_TTS_MODEL_DEFAULT = "speech-2.8-hd"
+MINIMAX_TTS_BASE = "https://api.minimaxi.com/v1"
+
+# 朗读前要剥掉的标记：表情包、内心旁白、各种系统指令（都不该被读出来）
+_TTS_STRIP_RE = re.compile(
+    r'\[表情包:[^\]]*\]|\[心里嘀咕[：:][^\]]*\]|'
+    r'\[(?:MUSIC|ALARM|REMINDER|MONITOR|SCHEDULE_DEL|SCHEDULE_LIST|TOY|HEART|MEMORY|'
+    r'WEB_SEARCH|WEB_EXTRACT|SELFIE|DRAW|SONG|CAM_CHECK|POI_SEARCH|PET|MOMENT|WISH|'
+    r'TRANSFER|HUG|BAND|APP_SUPERVISION|HOME|LOCK|VIDEO)[^]]*\]',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_tts_text(text: str) -> str:
+    """去掉 AI 回复里的控制标记，只留真正要朗读的话语。"""
+    return _TTS_STRIP_RE.sub('', text or '').strip()
+
+
+def _minimax_key() -> str:
+    return (SETTINGS.get("minimax_api_key") or "").strip()
+
+
+def _minimax_model() -> str:
+    return (SETTINGS.get("minimax_tts_model") or MINIMAX_TTS_MODEL_DEFAULT).strip()
+
+
+def _minimax_group_id() -> str:
+    return (SETTINGS.get("minimax_group_id") or "").strip()
+
+
+async def _minimax_synthesize(text: str, voice: str, *, timeout: float = 30.0) -> bytes | None:
+    """MiniMax T2A v2 合成 → 返回 MP3 bytes。（t2a_v2 只需 Bearer，不需要 GroupId）"""
+    text = _sanitize_tts_text(text)
+    if not text:
+        return None
+    url = f"{MINIMAX_TTS_BASE}/t2a_v2"
+    body = {
+        "model": _minimax_model(),
+        "text": text,
+        "stream": False,
+        "voice_setting": {"voice_id": voice, "speed": 1.0, "vol": 1.0},
+        "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {_minimax_key()}", "Content-Type": "application/json"},
+            json=body,
+        )
+        if resp.status_code != 200:
+            log.warning("MiniMax TTS API 错误: status=%d %s", resp.status_code, resp.text[:200])
+            return None
+        data = resp.json()
+        audio_str = ((data.get("data") or {}).get("audio") or "").strip()
+        if not audio_str:
+            log.warning("MiniMax TTS 响应无 audio: %s", str(data)[:200])
+            return None
+        # MiniMax 默认返回 hex（无 output_format 时）；兼容 base64
+        if len(audio_str) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in audio_str):
+            try:
+                return bytes.fromhex(audio_str)
+            except Exception:
+                pass
+        try:
+            return base64.b64decode(audio_str)
+        except Exception:
+            return None
+
+
 async def _request_tts_audio(text: str, voice: str, *, seq: int | None = None) -> bytes | None:
-    key = get_key("siliconflow")
-    if not key:
-        log.warning("TTS: 无硅基流动 API Key，跳过合成 seq=%s", seq)
+    if not _minimax_key():
+        log.warning("TTS: 无 MiniMax API Key，跳过合成 seq=%s", seq)
         return None
 
-    resp = None
     for attempt in range(3):
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                "https://api.siliconflow.cn/v1/audio/speech",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={
-                    "model": "FunAudioLLM/CosyVoice2-0.5B",
-                    "input": text,
-                    "voice": voice,
-                    "response_format": "mp3",
-                    "speed": 1.0,
-                    "gain": 0
-                }
-            )
-        if resp.status_code == 200:
-            return resp.content
-        log.warning("TTS API 错误: status=%d seq=%s attempt=%d", resp.status_code, seq, attempt + 1)
+        try:
+            audio = await _minimax_synthesize(text, voice, timeout=30)
+        except Exception as exc:
+            log.warning("MiniMax TTS 异常: %s seq=%s attempt=%d", exc, seq, attempt + 1)
+            audio = None
+        if audio:
+            return audio
         await asyncio.sleep(0.5 * (attempt + 1))
     return None
 

@@ -199,9 +199,10 @@
       <div class="cam-section">
         <div class="cam-section-title">◈ 语音合成 (TTS)</div>
         <div class="tts-voice-row">
-          <label>音色</label>
-          <select id="ttsVoiceSelect" onchange="changeTTSVoice()"><option value="">加载中...</option></select>
-          <button onclick="refreshTTSVoices()" style="background:none;border:none;cursor:pointer;font-size:14px" title="刷新音色列表">🔄</button>
+          <label>voice_id</label>
+          <input type="text" id="ttsCustomVoiceInput" placeholder="粘贴音色 ID，如 male-qn-qingse / khb19961022_01" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;outline:none" onchange="applyCustomTTSVoice()">
+          <button onclick="document.getElementById('ttsCloneFile').click()" style="background:none;border:none;cursor:pointer;font-size:14px" title="克隆音色：上传一段音频生成专属声音">🪄</button>
+          <input type="file" id="ttsCloneFile" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac" style="display:none" onchange="cloneTTSVoice(this)">
         </div>
       </div>
       <div class="cam-toggle-row">
