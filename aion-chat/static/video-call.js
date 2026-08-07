@@ -698,11 +698,19 @@ const videoCall = (() => {
         transcript = await _transcribeAudio(audioBlob);
       }
 
+      // 构建附件：视频片段 + 抓一帧画面当图片（中转站支持图片 → AI 能看到）
+      const atts = [];
+      if (videoUrl) atts.push({ type: 'video_clip', url: videoUrl, duration: Math.round(duration), transcript });
+      const frame = await _captureFrame(videoBlob);
+      if (frame) {
+        const imgUrl = await _uploadFile(frame, 'snapshot');
+        if (imgUrl) atts.push({ type: 'image', url: imgUrl });
+      }
+
       // 检查挂断关键词
       const hangupWords = ['再见', '拜拜', '挂断', '结束通话', '挂了'];
       if (transcript && hangupWords.some(kw => transcript.includes(kw))) {
-        const att = { type: 'video_clip', url: videoUrl, duration: Math.round(duration), transcript };
-        await _sendToChat('', att);
+        await _sendToChat('', atts);
         _hangup();
         return;
       }
@@ -710,8 +718,7 @@ const videoCall = (() => {
       // 发送给模型
       _aiSpeaking = true;
       _updateStatus('AI 思考中...');
-      const att = { type: 'video_clip', url: videoUrl, duration: Math.round(duration), transcript };
-      await _sendToChat(transcript, att);
+      await _sendToChat(transcript, atts);
     } catch (e) {
       console.error('[VideoCall] Record process error:', e);
       _updateStatus('⚠ 处理出错');
@@ -798,6 +805,29 @@ const videoCall = (() => {
     }
   }
 
+  // 从录制的视频里提取一帧当图片（保证 AI 看到的是录的内容）
+  async function _captureFrame(videoBlob) {
+    try {
+      if (!videoBlob) return null;
+      const v = document.createElement('video');
+      v.muted = true;
+      v.src = URL.createObjectURL(videoBlob);
+      await new Promise(res => { v.onloadeddata = res; v.load(); });
+      // 取视频中段一帧（开头常是黑屏/过渡）
+      if (v.duration) v.currentTime = Math.min(0.8, v.duration / 2);
+      await new Promise(res => { v.onseeked = res; });
+      const canvas = document.createElement('canvas');
+      canvas.width = v.videoWidth || 640;
+      canvas.height = v.videoHeight || 480;
+      canvas.getContext('2d').drawImage(v, 0, 0);
+      URL.revokeObjectURL(v.src);
+      return await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+    } catch (e) {
+      console.error('[VideoCall] frame capture:', e);
+      return null;
+    }
+  }
+
   // ── ASR 转写 ──
   async function _transcribeAudio(audioBlob) {
     try {
@@ -863,9 +893,13 @@ const videoCall = (() => {
     const convId = _convId || currentConvId;
     if (!convId) return;
 
-    // 构建附件
+    // 构建附件（支持单个附件或数组）
     const attachments = [];
-    if (videoAtt) attachments.push(videoAtt);
+    if (Array.isArray(videoAtt)) {
+      for (const a of videoAtt) { if (a) attachments.push(a); }
+    } else if (videoAtt) {
+      attachments.push(videoAtt);
+    }
 
     // 等待上一条消息发完（最多等 10 秒）
     if (typeof sending !== 'undefined' && sending) {

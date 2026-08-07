@@ -289,7 +289,7 @@ async def _emit_chat_visible_chunk(
         await tts_streamer.feed_async(visible_chunk)
 
 
-async def _consume_chat_stream(
+async def _consume_chat_stream_once(
     source,
     queue,
     *,
@@ -327,6 +327,28 @@ async def _consume_chat_stream(
         notice = f"\n\n[{result.notice}]"
         visible_text += notice
         await queue.put(_chat_stream_event(model_key, visible_text, notice))
+    return result, visible_text
+
+
+async def _consume_chat_stream(
+    source_factory,
+    queue,
+    *,
+    model_key: str,
+    tts_streamer: TTSStreamer | None = None,
+) -> tuple[StreamSafetyResult, str]:
+    """消费流；连接中断(transport)且还没输出任何文字时，自动重试一次。
+    source_factory 是返回新生成器的函数（每次重试重新调用 stream_ai）。"""
+    for attempt in range(2):
+        result, visible_text = await _consume_chat_stream_once(
+            source_factory(),
+            queue,
+            model_key=model_key,
+            tts_streamer=tts_streamer,
+        )
+        if result.stop_reason != "transport" or visible_text or attempt == 0:
+            return result, visible_text
+        print("[stream] 连接中断且未输出，自动重试一次")
     return result, visible_text
 
 
@@ -1293,7 +1315,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                     yield chunk
 
             stream_result, visible_text = await _consume_chat_stream(
-                content_stream(),
+                content_stream,
                 _q,
                 model_key=model_key,
                 tts_streamer=tts_streamer,
@@ -1945,7 +1967,7 @@ async def send_message(conv_id: str, body: MsgCreate):
                     yield chunk
 
             stream_result, visible_text = await _consume_chat_stream(
-                content_stream(),
+                content_stream,
                 _q,
                 model_key=model_key,
                 tts_streamer=tts_streamer,
@@ -3139,7 +3161,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                     yield chunk
 
             stream_result, visible_text = await _consume_chat_stream(
-                content_stream(),
+                content_stream,
                 _q,
                 model_key=model_key,
                 tts_streamer=regen_tts,
