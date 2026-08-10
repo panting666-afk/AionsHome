@@ -39,6 +39,7 @@ class AddServerRequest(BaseModel):
     name: str
     type: str = "sse"   # http / sse / stdio
     url: str
+    token: str = ""   # 可选鉴权 Token（填了会组装成 Authorization: Bearer 头）
 
 
 # ── API: 列出 MCP Server ──
@@ -51,7 +52,9 @@ async def list_servers():
 @router.post("/api/playground/servers/add")
 async def add_server(req: AddServerRequest):
     try:
-        srv = mcp_manager.add_server(req.name.strip(), req.type.strip(), req.url.strip())
+        srv = mcp_manager.add_server(
+            req.name.strip(), req.type.strip(), req.url.strip(), token=req.token
+        )
         return {"ok": True, "server": srv}
     except Exception as e:
         return {"ok": False, "error": str(e)}

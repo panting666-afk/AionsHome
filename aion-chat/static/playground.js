@@ -504,18 +504,20 @@ async function addServer() {
   const name = document.getElementById('addName').value.trim();
   const url = document.getElementById('addUrl').value.trim();
   const type = document.getElementById('addType').value;
+  const token = document.getElementById('addToken').value.trim();
   if (!name || !url) return;
 
   try {
     const resp = await fetch('/api/playground/servers/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, type, url }),
+      body: JSON.stringify({ name, type, url, token: token || '' }),
     });
     const data = await resp.json();
     if (data.ok) {
       document.getElementById('addName').value = '';
       document.getElementById('addUrl').value = '';
+      document.getElementById('addToken').value = '';
       renderManageList();
       loadServers();
     } else {

@@ -247,17 +247,24 @@ class MCPManager:
         return conn["tools"] if conn else []
 
     # ── 服务器配置管理 ────────────────────
-    def add_server(self, name: str, srv_type: str, url: str) -> dict:
-        """添加一个新的 MCP Server 配置"""
+    def add_server(self, name: str, srv_type: str, url: str, *, token: str = "") -> dict:
+        """添加一个新的 MCP Server 配置（可选 Token，组装成 Authorization 头）"""
         cfg = _load_config()
         for s in cfg.get("servers", []):
             if s["name"] == name:
                 raise ValueError(f"服务器名称已存在: {name}")
+        headers = {}
+        token = (token or "").strip()
+        if token:
+            if token.lower().startswith("bearer "):
+                headers["Authorization"] = token
+            else:
+                headers["Authorization"] = f"Bearer {token}"
         new_server = {
             "name": name,
             "type": srv_type,
             "url": url,
-            "headers": {},
+            "headers": headers,
             "enabled": True,
         }
         cfg.setdefault("servers", []).append(new_server)

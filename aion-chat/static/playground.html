@@ -30,8 +30,9 @@
       <div class="pg-manage-list" id="manageList"></div>
       <div class="pg-manage-add">
         <div class="pg-manage-add-title">添加新服务器</div>
-        <input type="text" class="pg-manage-input" id="addName" placeholder="名称，如「R论坛」">
-        <input type="text" class="pg-manage-input" id="addUrl" placeholder="MCP 地址（含 token）">
+        <input type="text" class="pg-manage-input" id="addName" placeholder="名称，如「麦当劳」">
+        <input type="text" class="pg-manage-input" id="addUrl" placeholder="MCP 地址，如 https://mcp.mcd.cn/mcp-servers/mcd-mcp">
+        <input type="password" class="pg-manage-input mono-input" id="addToken" placeholder="Token（可选，需要鉴权的服务填写）" autocomplete="off">
         <select class="pg-manage-input" id="addType">
           <option value="sse">SSE（推荐，大多数论坛用这个）</option>
           <option value="http">Streamable HTTP</option>
@@ -84,6 +85,6 @@
 </div>
 
 <script src="/static/theme.js?v=theme-20260606"></script>
-<script src="/static/playground.js"></script>
+<script src="/static/playground.js?v=playground-20260810-token"></script>
 </body>
 </html>
