@@ -145,6 +145,8 @@ async def init_db():
             ("period_start_ts", "REAL"),
             ("period_end_ts", "REAL"),
             ("compression_batch_id", "TEXT DEFAULT ''"),
+            ("recall_count", "INTEGER DEFAULT 0"),
+            ("last_recalled_at", "REAL"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE memories ADD COLUMN {col} {defn}")
@@ -729,6 +731,8 @@ async def init_db():
             ("period_start_ts", "REAL"),
             ("period_end_ts", "REAL"),
             ("compression_batch_id", "TEXT DEFAULT ''"),
+            ("recall_count", "INTEGER DEFAULT 0"),
+            ("last_recalled_at", "REAL"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE chatroom_memories ADD COLUMN {col} {defn}")

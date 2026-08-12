@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Any
 
 from config import DEFAULT_MODEL, MODELS, load_worldbook, SETTINGS, UPLOADS_DIR, CODEX_UPLOADS_DIR, PUBLIC_DIR, resolve_model_key
+from immersion_prompts import IMMERSION_GUIDE_TEMPLATE
 from database import get_db
 from ws import manager
 from active_window_state import record_aion_private_active
@@ -61,6 +62,52 @@ THEATER_ITEM_PATTERN = re.compile(r'\[剧场道具[：:]([^\]]+)\]')
 
 # 允许进入上下文的 system 消息关键词（点歌、查看监控、查看动态）
 _SYSTEM_MSG_CONTEXT_KEYWORDS = ('查看了监控', '搜索了', '点歌', '点了一首', '推荐了', '查看了动态', '视频通话', '本条为微信消息')
+
+
+def _immersion_guide(ai_name: str) -> str:
+    """入戏守则：让 AI 把设定当作真实身份，不确认、不出戏、像真人一样自然说话。
+
+    文本可在 immersion_prompts.py 里自行编辑。
+    """
+    return IMMERSION_GUIDE_TEMPLATE.format(ai_name=ai_name)
+
+
+def _build_persona_prefix(wb, ai_name: str, user_name: str) -> list:
+    """把 ai_persona / user_persona / system_prompt 打包成单条 system 消息。
+
+    内容原样保留（不动人设与系统规则），只把原来的「伪对答回执」换成 system 角色，
+    并在最前面附上入戏守则，避免 AI 把设定当作「已翻篇」的一次性对话。
+    """
+    blocks = []
+    if wb.get("ai_persona"):
+        blocks.append(f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}")
+    if wb.get("user_persona"):
+        blocks.append(f"[系统设定 - {user_name}信息]\n{wb['user_persona']}")
+    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
+        blocks.append(f"[系统提示]\n{wb['system_prompt']}")
+    if not blocks:
+        return []
+    return [{"role": "system", "content": _immersion_guide(ai_name) + "\n\n" + "\n\n".join(blocks)}]
+
+
+def _log_injected_prompt(history: list) -> None:
+    """控制台打印注入后的消息结构（只打印 role 序列 + 每条开头，避免 99KB 人设刷屏）。
+
+    重启后端后，在聊天页发一条消息即可在控制台看到类似：
+      [INJECT] system → user → system → system → user → assistant
+    """
+    try:
+        seq = " → ".join(str(m.get("role", "?")) for m in history[:12])
+        heads = " | ".join(
+            f"{m.get('role')}:{str(m.get('content', ''))[:40].replace(chr(10), ' ')}"
+            for m in history[:8]
+        )
+        print(f"[INJECT] {seq}")
+        print(f"         {heads}")
+    except Exception:
+        pass
+
+
 from context_builder import (
     fetch_merged_timeline, render_merged_timeline, build_health_summary,
     build_ability_block, WISH_CMD_PATTERN, _build_recall_query, strip_tool_commands,
@@ -151,9 +198,8 @@ async def _insert_private_ability_block(
     )
     if not ability_block:
         return inject_offset
-    history.insert(cap_idx + inject_offset, {"role": "user", "content": ability_block})
-    history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
-    return inject_offset + 2
+    history.insert(cap_idx + inject_offset, {"role": "system", "content": ability_block})
+    return inject_offset + 1
 
 router = APIRouter()
 
@@ -1180,16 +1226,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     wb = load_worldbook()
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
     if prefix:
         history = prefix + history
 
@@ -1259,9 +1296,8 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
         ]
         mem_text = "\n".join(unresolved_lines + normal_lines)
         bg_block += f"\n\n[背景记忆]\n以下是你记得的近期事件和需要关注的事项，在对话中如果有关联可以自然提起：\n{mem_text}"
-    history.insert(cap_idx + inject_offset, {"role": "user", "content": bg_block})
-    history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会在合适的时候自然提及。"})
-    inject_offset += 2
+    history.insert(cap_idx + inject_offset, {"role": "system", "content": bg_block})
+    inject_offset += 1
 
     if recall_query:
         # 用放宽后的召回结果（top10，软阈值），去掉硬编码 0.45 闸门
@@ -1280,10 +1316,10 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
         mem_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"
         if detail_text:
             mem_block += f"\n\n[记忆来源原文]\n以下是相关记忆挂载的来源原文；旧记忆没有精确来源时才会按时间范围回退筛选原文：\n{detail_text}"
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": mem_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": mem_block})
 
     debug_prompt = [{"role": m["role"], "content": m["content"]} for m in history]
+    _log_injected_prompt(history)
 
     ai_msg_id = f"msg_{int(time.time()*1000)}"
     usage_meta: dict = {}
@@ -1761,16 +1797,7 @@ async def send_message(conv_id: str, body: MsgCreate):
     wb = load_worldbook()
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
     if prefix:
         history = prefix + history
 
@@ -1791,9 +1818,8 @@ async def send_message(conv_id: str, body: MsgCreate):
 
     # 1.4 注入用户分享的小红书笔记内容（如果有）
     if shared_note_block:
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": shared_note_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我看看你分享的这篇笔记。"})
-        inject_offset += 2
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": shared_note_block})
+        inject_offset += 1
 
     # 1.5 注入剧场·场外求助上下文（如果有）
     theater_session = None
@@ -1832,9 +1858,8 @@ async def send_message(conv_id: str, body: MsgCreate):
 - [剧场属性：属性名 +N] 或 [剧场属性：属性名 -N]  修改属性（属性名可以是：hp、力量、敏捷、智力、魅力、幸运）
 - [剧场道具：道具名]  赠送道具"""
 
-            history.insert(cap_idx + inject_offset, {"role": "user", "content": theater_block})
-            history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我了解当前的游戏状况了。"})
-            inject_offset += 2
+            history.insert(cap_idx + inject_offset, {"role": "system", "content": theater_block})
+            inject_offset += 1
 
     # 2. 即时哨兵 + 记忆召回（fast_mode 时跳过以加快语音聊天响应）
     recall_keywords_str = ""
@@ -1854,9 +1879,8 @@ async def send_message(conv_id: str, body: MsgCreate):
         health_text = await build_health_summary()
         if health_text:
             bg_block += health_text
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": bg_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到。"})
-        inject_offset += 2
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": bg_block})
+        inject_offset += 1
     else:
         # ── 正常模式：完整 RAG 流程 ──
         digest_result = await instant_digest(actual_recent)
@@ -1905,9 +1929,8 @@ async def send_message(conv_id: str, body: MsgCreate):
             ]
             mem_text = "\n".join(unresolved_lines + normal_lines)
             bg_block += f"\n\n[背景记忆]\n以下是你记得的近期事件和需要关注的事项，在对话中如果有关联可以自然提起：\n{mem_text}"
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": bg_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会在合适的时候自然提及。"})
-        inject_offset += 2
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": bg_block})
+        inject_offset += 1
 
         # 4. RAG 精确召回（与背景记忆去重，使用已并行获取的结果）
         if recall_query:
@@ -1928,10 +1951,10 @@ async def send_message(conv_id: str, body: MsgCreate):
             mem_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"
             if detail_text:
                 mem_block += f"\n\n[记忆来源原文]\n以下是相关记忆挂载的来源原文；旧记忆没有精确来源时才会按时间范围回退筛选原文：\n{detail_text}"
-            history.insert(cap_idx + inject_offset, {"role": "user", "content": mem_block})
-            history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
+            history.insert(cap_idx + inject_offset, {"role": "system", "content": mem_block})
 
     debug_prompt = [{"role": m["role"], "content": m["content"]} for m in history]
+    _log_injected_prompt(history)
 
     ai_msg_id = f"msg_{int(time.time()*1000)}"
     usage_meta: dict = {}
@@ -2550,16 +2573,7 @@ async def perform_web_search_check(conv_id: str, model_key: str, searches: list[
     user_name = wb.get("user_name", "用户")
     ai_name = wb.get("ai_name", "AI")
 
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
 
     import aiosqlite
     async with get_db() as db:
@@ -2728,16 +2742,7 @@ async def perform_poi_check(conv_id: str, model_key: str, categories: list[str])
     user_name = wb.get("user_name", "用户")
     ai_name = wb.get("ai_name", "AI")
 
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
 
     # 获取最近对话上下文
     import aiosqlite
@@ -2872,16 +2877,7 @@ async def perform_activity_check(conv_id: str, model_key: str, n: int = 6):
     except Exception:
         heart_rate_block = ""
 
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
 
     import aiosqlite
     async with get_db() as db:
@@ -3014,16 +3010,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
     wb = load_worldbook()
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        prefix.append({"role": "user", "content": f"[系统提示]\n{wb['system_prompt']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+    prefix = _build_persona_prefix(wb, ai_name, user_name)
     if prefix:
         history = prefix + history
 
@@ -3058,9 +3045,8 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         health_text = await build_health_summary()
         if health_text:
             bg_block += health_text
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": bg_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到。"})
-        inject_offset += 2
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": bg_block})
+        inject_offset += 1
     else:
         # ── 正常模式：完整 RAG 流程 ──
         digest_result = await instant_digest(actual_recent)
@@ -3089,9 +3075,8 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
             ]
             mem_text = "\n".join(unresolved_lines + normal_lines)
             bg_block += f"\n\n[背景记忆]\n以下是你记得的近期事件和需要关注的事项，在对话中如果有关联可以自然提起：\n{mem_text}"
-        history.insert(cap_idx + inject_offset, {"role": "user", "content": bg_block})
-        history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会在合适的时候自然提及。"})
-        inject_offset += 2
+        history.insert(cap_idx + inject_offset, {"role": "system", "content": bg_block})
+        inject_offset += 1
 
         # 4. RAG 精确召回（与背景记忆去重）
         recall_query = _build_recall_query(
@@ -3124,10 +3109,10 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
             mem_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"
             if detail_text:
                 mem_block += f"\n\n[记忆来源原文]\n以下是相关记忆挂载的来源原文；旧记忆没有精确来源时才会按时间范围回退筛选原文：\n{detail_text}"
-            history.insert(cap_idx + inject_offset, {"role": "user", "content": mem_block})
-            history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
+            history.insert(cap_idx + inject_offset, {"role": "system", "content": mem_block})
 
     debug_prompt = [{"role": m["role"], "content": m["content"]} for m in history]
+    _log_injected_prompt(history)
     ai_msg_id = f"msg_{int(time.time()*1000)}"
     usage_meta: dict = {}
 

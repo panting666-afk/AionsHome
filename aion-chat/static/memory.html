@@ -39,6 +39,7 @@
 .mem-meta { display:flex; align-items:center; gap:6px; margin-top:3px; flex-wrap:wrap; }
 .mem-kw { font-size:10px; color:var(--accent); opacity:0.85; }
 .mem-time { font-size:10px; color:var(--text3); }
+.mem-recall { font-size:10px; color:#e08b3c; background:rgba(224,139,60,0.12); border:1px solid rgba(224,139,60,0.35); border-radius:8px; padding:0 5px; line-height:16px; white-space:nowrap; }
 .mem-content { flex:1; color:var(--text); word-break:break-word; }
 .mem-content-edit { flex:1; background:var(--surface2); color:var(--text); border:1px solid var(--accent); border-radius:4px; padding:8px 10px; font-size:14px; font-family:inherit; resize:vertical; min-height:50vh; line-height:1.5; width:100%; box-sizing:border-box; }
 .mem-actions { display:flex; gap:4px; flex-shrink:0; margin-top:2px; }
@@ -468,12 +469,14 @@ function renderMemories() {
       if (kws.length) kwDisplay = `<span class="mem-kw">${kws.map(k => escHtml(k)).join(' · ')}</span>`;
     } catch(e) { if (m.keywords) kwDisplay = `<span class="mem-kw">${escHtml(m.keywords)}</span>`; }
     const impDisplay = m.importance != null ? `<span class="mem-imp" title="重要度">${Number(m.importance).toFixed(1)}</span>` : '';
+    const recallCount = Number(m.recall_count || 0);
+    const recallBadge = recallCount > 0 ? `<span class="mem-recall" title="已被召回 ${recallCount} 次${m.last_recalled_at ? '，最近 ' + new Date(Number(m.last_recalled_at) * 1000).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) : ''}">🔁 ${recallCount}</span>` : '';
     const pinClass = m.unresolved ? 'mem-pin active' : 'mem-pin';
     return `<div class="mem-entry${m.unresolved ? ' mem-unresolved' : ''}" data-id="${escHtml(m.id)}">
       <div class="mem-left"><div class="mem-kind-wrap"><button class="mem-type ${kindClass}" onclick="openMemoryKindMenu('${escHtml(m.id)}', event)" title="当前类型：${escHtml(typeLabel)}；点击选择标签" aria-label="选择记忆标签">${escHtml(kindLabel)}</button>${kindMenu}</div>${impDisplay}</div>
       <div style="flex:1;min-width:0">
         <div class="mem-content" id="mc_${escHtml(m.id)}">${escHtml(m.content)}</div>
-        <div class="mem-meta">${kwDisplay}${timeStr ? `<span class="mem-time">${escHtml(timeStr)}</span>` : ''}</div>
+        <div class="mem-meta">${recallBadge}${kwDisplay}${timeStr ? `<span class="mem-time">${escHtml(timeStr)}</span>` : ''}</div>
       </div>
       <div class="mem-actions">
         <button class="${pinClass}" onclick="toggleUnresolved('${escHtml(m.id)}')" title="标记待办">📌</button>

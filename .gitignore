@@ -90,3 +90,24 @@ AionApp/local.properties
 *.log
 .DS_Store
 Thumbs.db
+
+# ── 运行数据 / 隐私（不应上传） ──
+aion-chat/data/aion_chat.db
+aion-chat/data/aion_chat.db-wal
+aion-chat/data/aion_chat.db-shm
+aion-chat/data/push_subscriptions.json
+aion-chat/data/vapid_keys.json
+aion-chat/data/sticker_packs.json
+aion-chat/data/bubble_styles.json
+aion-chat/data/maintenance_state.json
+aion-chat/data/date_theater_config.json
+aion-chat/data/doudizhu_state.json
+aion-chat/data/xhs_lite_config.json
+aion-chat/data/appearance_originals/
+aion-chat/data/gift_thumbnails/
+aion-chat/data/model_raw_responses/
+
+# ── 备份 / 打包产物 ──
+aionshome-data.tar.gz
+aionshome-source.tar.gz
+backups/

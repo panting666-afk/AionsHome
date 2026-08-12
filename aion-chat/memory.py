@@ -385,7 +385,8 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
             "SELECT id, content, type, created_at, source_conv, embedding, keywords, importance, "
-            "source_start_ts, source_end_ts, source_msg_id, evidence_summary "
+            "source_start_ts, source_end_ts, source_msg_id, evidence_summary, "
+            "recall_count, last_recalled_at "
             "FROM memories WHERE COALESCE(archive_state,'active')='active'"
         )
         rows = await cur.fetchall()
@@ -416,6 +417,8 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
             "source_conv": row["source_conv"],
             "source_msg_id": row["source_msg_id"],
             "evidence_summary": row["evidence_summary"] if "evidence_summary" in row.keys() else "",
+            "recall_count": int(row["recall_count"] or 0) if "recall_count" in row.keys() else 0,
+            "last_recalled_at": row["last_recalled_at"] if "last_recalled_at" in row.keys() else None,
         }
         item.update(_memory_time_payload(item))
         all_scored.append(item)
@@ -424,6 +427,20 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
     # 软下限：阈值最多放宽到 0.15，纯噪音（分数≈0）仍被过滤，但"差一点"的相关记忆不再丢
     effective_floor = min(float(threshold), 0.15)
     matched = [r for r in all_scored if r["score"] >= effective_floor][:top_k]
+    # 记录召回统计：命中即 +1，并记最近召回时间
+    if matched:
+        try:
+            ids = [r["id"] for r in matched]
+            placeholders = ",".join("?" * len(ids))
+            async with get_db() as db:
+                await db.execute(
+                    f"UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1, "
+                    f"last_recalled_at = ? WHERE id IN ({placeholders})",
+                    (time.time(), *ids),
+                )
+                await db.commit()
+        except Exception:
+            pass
     return matched, debug_top6
 
 

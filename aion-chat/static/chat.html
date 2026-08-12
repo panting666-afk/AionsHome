@@ -199,8 +199,11 @@
       <div class="cam-section">
         <div class="cam-section-title">◈ 语音合成 (TTS)</div>
         <div class="tts-voice-row">
-          <label>voice_id</label>
-          <input type="text" id="ttsCustomVoiceInput" placeholder="粘贴音色 ID，如 male-qn-qingse / khb19961022_01" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;outline:none" onchange="applyCustomTTSVoice()">
+          <label>音色</label>
+          <select id="ttsVoiceSelect" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;outline:none" onchange="onTTSVoiceSelect()">
+            <option value="">选择音色…</option>
+          </select>
+          <button onclick="loadTTSVoiceList()" style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--text3, #888)" title="从 MiniMax 拉取音色列表">↻</button>
           <button onclick="document.getElementById('ttsCloneFile').click()" style="background:none;border:none;cursor:pointer;font-size:14px" title="克隆音色：上传一段音频生成专属声音">🪄</button>
           <input type="file" id="ttsCloneFile" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac" style="display:none" onchange="cloneTTSVoice(this)">
         </div>
@@ -209,6 +212,13 @@
         <span class="cam-toggle-label">AI 发表情包 <span style="font-size:11px;color:var(--text3);margin-left:4px">默认开启</span></span>
         <label class="toggle-switch">
           <input type="checkbox" id="aiStickersToggle" onchange="toggleAiStickers()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="cam-toggle-row">
+        <span class="cam-toggle-label">表情包自动联想 <span style="font-size:11px;color:var(--text3);margin-left:4px">打字时联想</span></span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="stickerSuggestToggle" onchange="toggleStickerSuggest()">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -282,6 +292,7 @@
     <div class="messages" id="messages"></div>
     <div class="input-area">
       <div class="preview-area" id="previewArea"></div>
+      <div class="sticker-suggest" id="stickerSuggest" hidden></div>
       <div class="input-row" id="inputRow">
         <div class="plus-menu-wrap">
           <button class="upload-btn" onclick="togglePlusMenu()" title="更多功能">＋</button>
@@ -294,7 +305,7 @@
         </div>
         <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" onchange="handleFileSelect(this)">
         <button class="sticker-btn" id="stickerBtn" onclick="toggleStickerPanel()" title="表情包" aria-label="表情包">😊</button>
-        <textarea id="input" rows="1" placeholder="输入消息..." onkeydown="handleKey(event)" oninput="autoResize(this); _updateSendBtnState()"></textarea>
+        <textarea id="input" rows="1" placeholder="输入消息..." onkeydown="handleKey(event)" oninput="autoResize(this); _updateSendBtnState(); updateStickerSuggest()"></textarea>
         <button class="send-btn" id="sendBtn" onclick="handleSendBtn()" disabled>➤</button>
       </div>
       <div class="sticker-panel" id="stickerPanel" hidden>
@@ -331,7 +342,7 @@
 </div>
 <script src="/static/hug_pillow_ai.js?v=hug-pillow-ai-20260726"></script>
 <script src="/static/monitor-camera-snapshot.js?v=20260731"></script>
-<script src="/static/chat.js?v=band-vibration-note-20260717-hug-pillow-ai-20260726-monitor-camera-20260731"></script>
+<script src="/static/chat.js?v=band-vibration-note-20260717-hug-pillow-ai-20260726-monitor-camera-20260731-tts-voice-list-20260810-ai-edit-reply-20260812-sticker-suggest-20260812b"></script>
 <script src="/static/voice-call.js?v=voice-call-polish-20260704g"></script>
 
 <!-- ── 转账弹窗 ── -->

@@ -1106,14 +1106,6 @@ function toggleTTS() {
   }
 }
 
-// 同步 voice_id 输入框（TTS 只用 voice_id，不用下拉列表）
-function syncTTSVoiceInput() {
-  const input = $('ttsCustomVoiceInput');
-  if (input && ttsVoiceId && input.value !== ttsVoiceId) {
-    input.value = ttsVoiceId;
-  }
-}
-
 function privateVoiceCallSpeakerName() {
   return (worldBook && worldBook.ai_name) || "AI";
 }
@@ -1132,7 +1124,7 @@ async function cloneTTSVoice(input) {
       ttsVoiceId = d.voice_id;
       localStorage.setItem('aion_tts_voice', ttsVoiceId);
       _sendTTSState();
-      syncTTSVoiceInput();
+      loadTTSVoiceList(true);  // 刷新下拉，选中新克隆音色
       showToast('✅ 克隆完成！已选中新音色');
     } else {
       showToast(d.error || '克隆失败');
@@ -1143,14 +1135,52 @@ async function cloneTTSVoice(input) {
   input.value = '';
 }
 
-// 使用 voice_id（手动输入或失焦时生效）
-function applyCustomTTSVoice() {
-  const v = $('ttsCustomVoiceInput').value.trim();
-  if (!v) { showToast('请输入 voice_id'); return; }
+// ── 音色列表：从 MiniMax 拉取，填充下拉 ──
+async function loadTTSVoiceList(quiet) {
+  const sel = $('ttsVoiceSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">拉取中…</option>';
+  sel.disabled = true;
+  try {
+    const resp = await fetch('/api/tts/voices');
+    const d = await resp.json();
+    sel.disabled = false;
+    sel.innerHTML = '';
+    const voices = d.voices || [];
+    if (voices.length === 0) {
+      sel.innerHTML = '<option value="">未拉到音色</option>';
+      if (d.error && !quiet) showToast('拉取音色失败：' + d.error);
+      return;
+    }
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— 选择音色 —';
+    sel.appendChild(placeholder);
+    voices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.uri;
+      opt.textContent = v.customName || v.name || v.uri;
+      opt.title = v.uri;
+      sel.appendChild(opt);
+    });
+    if (ttsVoiceId && Array.from(sel.options).some(o => o.value === ttsVoiceId)) {
+      sel.value = ttsVoiceId;
+    }
+  } catch (e) {
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">拉取失败</option>';
+    if (!quiet) showToast('拉取音色失败：' + e.message);
+  }
+}
+
+// 下拉选择音色 → 生效
+function onTTSVoiceSelect() {
+  const v = $('ttsVoiceSelect').value;
+  if (!v) return;
   ttsVoiceId = v;
   localStorage.setItem('aion_tts_voice', ttsVoiceId);
   _sendTTSState();
-  showToast('✅ 已使用 voice_id: ' + v);
+  showToast('✅ 已使用音色：' + v);
 }
 
 window.PrivateVoiceCallAdapter = {
@@ -1954,7 +1984,7 @@ function renderMessages() {
     const roleLabel = isUser ? (worldBook.user_name || '你') : (worldBook.ai_name || 'AI');
     const time = m.created_at ? fmtTime(m.created_at) : "";
     const starLabel = m.starred ? '取消星标' : '⭐ 星标';
-    const actionsHtml = `${isUser ? `<button onclick="editMsg('${m.id}');closeMsgMenus()">编辑</button>` : `<button onclick="regenerateMsg('${m.id}');closeMsgMenus()">重新生成</button>`}<button onclick="delMsg('${m.id}');closeMsgMenus()">删除</button><button onclick="copyMsg('${m.id}');closeMsgMenus()">复制</button><button onclick="toggleStar('${m.id}');closeMsgMenus()">${starLabel}</button>`;
+    const actionsHtml = `<button onclick="editMsg('${m.id}');closeMsgMenus()">编辑</button>${isUser ? '' : `<button onclick="regenerateMsg('${m.id}');closeMsgMenus()">重新生成</button>`}<button onclick="delMsg('${m.id}');closeMsgMenus()">删除</button><button onclick="copyMsg('${m.id}');closeMsgMenus()">复制</button><button onclick="toggleStar('${m.id}');closeMsgMenus()">${starLabel}</button>`;
     const starBadge = m.starred ? '<span class="msg-star-badge">✨</span>' : '';
     const dotsLeft = isUser ? `<button class="msg-dots" onclick="event.stopPropagation();toggleMsgMenu('${m.id}')">&#8943;</button>` : '';
     const dotsRight = !isUser ? `<button class="msg-dots" onclick="event.stopPropagation();toggleMsgMenu('${m.id}')">&#8943;</button>` : '';
@@ -2907,6 +2937,7 @@ async function send() {
   _showStopBtn();
   input.value = "";
   autoResize(input);
+  updateStickerSuggest();
   const attachments = pendingAttachments.map(a => a.url).concat(stickerAtts);
   pendingAttachments = [];
   renderPreview();
@@ -3093,7 +3124,9 @@ function editMsg(id) {
     '<button class="edit-save" onclick="saveEdit(\'' + id + '\')">确认</button>' +
     '</div>';
   const ta = document.getElementById('edit_' + id);
-  ta.value = msg.content;
+  ta.value = msg.role === 'assistant'
+    ? (msg.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim()
+    : msg.content;
   ta.style.height = 'auto';
   ta.style.height = ta.scrollHeight + 'px';
   ta.oninput = function() { this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px'; };
@@ -3109,6 +3142,22 @@ async function saveEdit(id) {
   if (!newText) return;
   const msg = currentMessages.find(m => m.id === id);
   if (!msg) return;
+
+  // AI 回复：原地保存修正内容（修复掉格式/表情包不显示等），不重发、不删后续
+  if (msg.role === 'assistant') {
+    const metaBlocks = (msg.content || '').match(/<meta>[\s\S]*?<\/meta>/g) || [];
+    const savedContent = metaBlocks.length ? `${newText}\n${metaBlocks.join('')}` : newText;
+    try {
+      await api('PUT', `/api/messages/${id}`, { content: savedContent });
+      msg.content = savedContent;
+      renderMessages();
+    } catch (e) {
+      console.error('编辑 AI 回复失败:', e);
+      addErrorToSystemLog(`编辑回复失败: ${e.message || e}`, $('modelSelect')?.value);
+      renderMessages();
+    }
+    return;
+  }
 
   // 编辑重新发送：更新消息内容 + 删除后续消息 + AI 重新回复
   sending = true;
@@ -4974,7 +5023,7 @@ function sendSystemNotification(title, body) {
 // 初始化 TTS
 (function initTTS() {
   $('ttsToggle').checked = ttsEnabled;
-  syncTTSVoiceInput();
+  loadTTSVoiceList(true);  // 静默拉取音色列表
 })();
 
 // ══════════════════════════════════════════════════
@@ -5785,10 +5834,12 @@ function toggleStickerPanel() {
   const p = $('stickerPanel');
   if (p.hidden) {
     p.hidden = false;
+    const bar = $('stickerSuggest'); if (bar) bar.hidden = true;
     if (!_stickerLoaded) loadStickerPacks();
     else { renderStickerTabs(); renderStickerGrid(); }
   } else {
     p.hidden = true;
+    updateStickerSuggest();
   }
 }
 function closeStickerPanel() { $('stickerPanel').hidden = true; }
@@ -5879,6 +5930,93 @@ function parseStickerMarkersLocal(text) {
   out += text.slice(last);
   return { text: out.trim(), atts };
 }
+
+// ── 输入联想表情包：打字时在对话框上方自动推荐 ──
+function _stickerSuggestEnabled() {
+  return localStorage.getItem('aion_sticker_suggest') !== 'false';
+}
+
+function _matchStickers(text) {
+  const groups = (stickerPacks && stickerPacks.groups) || [];
+  const all = [];
+  groups.forEach(g => (g.stickers || []).forEach(s => all.push(Object.assign({ group: g.name }, s))));
+  const lower = (text || '').toLowerCase().trim();
+  if (!lower) return [];
+  // 取最后一段（空格/标点分隔），匹配更贴近正在输入的词
+  const seg = lower.split(/[\s，。,.!！?？、；;：:"'“”‘’]+/).pop() || lower;
+  const scored = [];
+  for (const s of all) {
+    const d = (s.desc || '').toLowerCase();
+    if (!d) continue;
+    let score = 0;
+    if (seg && d.includes(seg)) score = 1.0;
+    else if (seg && seg.length >= 2 && d.includes(seg.slice(0, 2))) score = 0.85;
+    else if (lower.length >= 2 && d.includes(lower)) score = 0.8;
+    else if (seg && seg.includes(d)) score = 0.7;
+    else if (lower.includes(d)) score = 0.6;
+    else {
+      for (let i = 0; i < Math.min(seg.length, 8) - 1; i++) {
+        const bi = seg.slice(i, i + 2);
+        if (d.includes(bi)) { score = 0.55; break; }
+      }
+    }
+    if (score > 0) scored.push({ s, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const seen = new Set(), out = [];
+  for (const x of scored) {
+    if (seen.has(x.s.id)) continue;
+    seen.add(x.s.id);
+    out.push(x.s);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function updateStickerSuggest() {
+  const bar = $('stickerSuggest');
+  const ta = $('input');
+  if (!bar || !ta) { return; }
+  const matches = (_stickerSuggestEnabled() && ta.value.trim()) ? _matchStickers(ta.value) : [];
+  if (!matches.length) { bar.hidden = true; bar.innerHTML = ''; return; }
+  bar.innerHTML = matches.map(s =>
+    '<button class="sticker-sug" onclick="insertSugSticker(' + JSON.stringify({ url: s.url, desc: s.desc }).replace(/"/g, '&quot;') + ')" title="' + escHtml(s.desc) + '">' +
+      '<img class="sticker-sug-img" src="' + escHtml(s.url) + '" alt="' + escHtml(s.desc) + '" loading="lazy" onerror="this.style.opacity=0">' +
+      '<span class="sticker-sug-desc">' + escHtml(s.desc) + '</span>' +
+    '</button>'
+  ).join('');
+  bar.hidden = false;
+}
+
+function insertSugSticker(sticker) {
+  const ta = $('input');
+  if (!ta) return;
+  const marker = '[表情包:' + (sticker.desc || '') + ']';
+  const start = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+  const end = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+  ta.value = ta.value.slice(0, start) + marker + ta.value.slice(end);
+  const pos = start + marker.length;
+  try { ta.setSelectionRange(pos, pos); } catch (e) {}
+  autoResize(ta);
+  if (typeof _updateSendBtnState === 'function') _updateSendBtnState();
+  ta.focus();
+  updateStickerSuggest();
+}
+
+// ── 表情包自动联想开关（本地偏好，立即生效）────────────
+function toggleStickerSuggest() {
+  const t = $('stickerSuggestToggle');
+  if (!t) return;
+  localStorage.setItem('aion_sticker_suggest', t.checked ? 'true' : 'false');
+  updateStickerSuggest();
+  showToast(t.checked ? '✅ 已开启打字联想表情包' : '已关闭打字联想表情包');
+}
+function loadStickerSuggestSetting() {
+  const t = $('stickerSuggestToggle');
+  if (!t) return;
+  t.checked = localStorage.getItem('aion_sticker_suggest') !== 'false';
+}
+document.addEventListener('DOMContentLoaded', loadStickerSuggestSetting);
 
 // ── 管理弹窗 ──
 function openStickerManager() {

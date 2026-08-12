@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.venv
+backups
+deploy/persistent
+**/__pycache__
+**/*.pyc
+aion-chat/data
+public/wallpaper
+Connor-Codex/uploads
+Connor-Codex/node_modules
+*.bat
+*.log

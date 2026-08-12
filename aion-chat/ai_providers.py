@@ -461,9 +461,18 @@ def build_multimodal_messages(history: list, *, include_audio: bool = False):
 
 
 def build_gemini_contents(history: list, *, include_audio: bool = False):
-    """将带附件的历史记录转换为 Gemini 格式"""
+    """将带附件的历史记录转换为 Gemini 格式
+
+    role="system" 的消息会被提取出来，合并到对话最前面作为一条引导 user 消息，
+    避免被误映射成 model 角色（Gemini 原生 contents 没有 system 角色位）。
+    """
     contents = []
+    system_texts = []
     for m in history:
+        if m["role"] == "system":
+            if m.get("content"):
+                system_texts.append(m["content"])
+            continue
         role = "user" if m["role"] == "user" else "model"
         attachments = m.get("attachments", [])
         if isinstance(attachments, str):
@@ -482,6 +491,12 @@ def build_gemini_contents(history: list, *, include_audio: bool = False):
                     b64 = base64.b64encode(fpath.read_bytes()).decode()
                     parts.append({"inline_data": {"mime_type": mime, "data": b64}})
         contents.append({"role": role, "parts": parts if parts else [{"text": m["content"]}]})
+    if system_texts:
+        guide = "[系统设定]\n" + "\n\n".join(system_texts)
+        if contents and contents[0]["role"] == "user":
+            contents[0]["parts"].insert(0, {"text": guide + "\n\n"})
+        else:
+            contents.insert(0, {"role": "user", "parts": [{"text": guide}]})
     return contents
 
 

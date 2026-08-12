@@ -308,6 +308,15 @@ def _build_recall_query(
     return f"{base} {keyword_text}".strip()
 
 
+# 记忆时间铁律：防止 AI 把旧记忆当最近/此刻发生的事，或给记忆编造日期。
+_MEMORY_TIME_RULE = (
+    "时间铁律：系统会给你当前的准确时间，下面每条记忆也都带发生/记录时间。"
+    "绝不能混淆时间——旧记忆（哪怕只是前一天）也不能说成此刻或最近正在发生的事；"
+    "绝不能给记忆编造、猜测或改动日期；如果拿不准某件事的时间，就明说记不清，绝不编日期；"
+    "与当前话题无关的旧记忆不要主动翻出来讲。"
+)
+
+
 async def build_memory_blocks(
     query_text: str,
     recent_messages: list[dict] = None,
@@ -423,7 +432,7 @@ async def build_memory_blocks(
             if not m.get("unresolved")
         ]
         mem_text = "\n".join(unresolved_lines + normal_lines)
-        time_block += f"\n\n[背景记忆]\n以下是你记得的近期事件和需要关注的事项，在对话中如果有关联可以自然提起：\n{mem_text}"
+        time_block += f"\n\n[背景记忆]\n以下是你记得的事件（每条带发生/记录时间，可能是一天前甚至更早的旧事）。\n{_MEMORY_TIME_RULE}\n{mem_text}"
 
     # RAG 摘要召回；always_include_recalled 用于需要每轮主动带摘要记忆的上下文。
     recalled = []
@@ -443,7 +452,7 @@ async def build_memory_blocks(
 
     if recalled:
         mem_lines = format_recalled_memories_for_prompt(recalled, limit=200)
-        memory_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"
+        memory_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆（每条带发生/记录时间，可能不是最近发生的旧事）。\n{_MEMORY_TIME_RULE}\n{mem_lines}"
         if is_search_needed or digest_result.get("require_detail"):
             detail_text = ""
             if use_main_memories:

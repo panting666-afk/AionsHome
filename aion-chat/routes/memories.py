@@ -261,7 +261,8 @@ async def list_memories(
             filtered_total = int((await cur.fetchone())["total"] or 0)
         cur = await db.execute(
             "SELECT id, content, type, created_at, source_conv, keywords, importance, "
-            "source_start_ts, source_end_ts, unresolved, source_msg_id, evidence_summary, evidence_detail_level "
+            "source_start_ts, source_end_ts, unresolved, source_msg_id, evidence_summary, evidence_detail_level, "
+            "recall_count, last_recalled_at "
             f"FROM memories{where_sql} ORDER BY {sort_expr} DESC LIMIT ?",
             (*params, limit + 1),
         )

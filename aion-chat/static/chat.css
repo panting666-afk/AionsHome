@@ -2152,6 +2152,29 @@ body[data-theme="light"] .date-summary-text { color: #42506d; }
 .sticker-btn:active { transform: scale(.92); }
 .sticker-btn.active { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px rgba(255,131,89,0.22); }
 
+/* 输入联想表情包条 */
+.sticker-suggest {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; margin: 4px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+}
+.sticker-suggest::-webkit-scrollbar { height: 4px; }
+.sticker-suggest::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
+.sticker-suggest[hidden] { display: none; }
+.sticker-sug {
+  flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  transition: transform .12s ease, border-color .12s ease;
+}
+.sticker-sug:hover { transform: translateY(-1px); border-color: var(--accent); }
+.sticker-sug-img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; }
+.sticker-sug-desc { font-size: 12px; color: var(--text2); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* 面板 */
 .sticker-panel {
   position: absolute;
