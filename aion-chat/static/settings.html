@@ -1298,6 +1298,24 @@ body[data-theme="light"] .ghost-btn {
       </div>
     </details>
 
+    <details class="settings-card">
+      <summary>
+        <div class="summary-title">
+          <strong>🧠 AI 入戏守则</strong>
+          <span>人设贴合度 / 防出戏 prompt（改完立即生效，无需重启）</span>
+        </div>
+        <span class="summary-chevron">›</span>
+      </summary>
+      <div class="card-body">
+        <p class="hint" style="margin:0 0 8px">这段文本会作为 system 消息喂给聊天 AI，约束它的说话方式与自我认知。改完点「保存」立即生效。必须保留 <code>{ai_name}</code>（保存时自动替换成角色名），删掉的话角色名不会出现。</p>
+        <textarea id="immersionGuideInput" class="form-input" rows="12" spellcheck="false" style="width:100%;box-sizing:border-box;"></textarea>
+        <div class="section-actions">
+          <button class="btn-save" type="button" onclick="saveImmersionGuide()">保存入戏守则</button>
+          <button class="btn-cancel" type="button" onclick="resetImmersionGuide()">恢复默认</button>
+        </div>
+      </div>
+    </details>
+
   </div>
 </div>
 <script src="/static/theme.js?v=theme-20260606"></script>
@@ -1989,6 +2007,7 @@ function collectCustomRoutes() {
   loadEmbeddingModels();
   refreshPhoneScreenStatus();
   refreshMediaCacheStatus();
+  loadImmersionGuide();
 })();
 
 // ── AI 主动消息：间隔预设 / 自定义 ────────────────
@@ -2062,6 +2081,27 @@ async function saveSettings() {
   customModelRoutes = normalizeRoutesForUi(customRoutes, collapsedState);
   renderCustomRoutes();
   showToast("✅ 已保存，模型列表刷新后可选择新模型");
+}
+
+// ── AI 入戏守则 ──────────────────────────────────
+async function loadImmersionGuide() {
+  try {
+    var d = await api("GET", "/api/settings/immersion-guide");
+    $("immersionGuideInput").value = d.text || "";
+  } catch (e) { /* 静默 */ }
+}
+
+async function saveImmersionGuide() {
+  var text = $("immersionGuideInput").value.trim();
+  if (!text) { showToast("内容不能为空"); return; }
+  await api("PUT", "/api/settings/immersion-guide", { text: text });
+  showToast("✅ 入戏守则已保存，立即生效");
+}
+
+async function resetImmersionGuide() {
+  var d = await api("GET", "/api/settings/immersion-guide");
+  $("immersionGuideInput").value = d.default || "";
+  showToast("已填入默认文本，点「保存」生效");
 }
 
 function enablePhoneScreenSupervision() {

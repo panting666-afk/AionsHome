@@ -207,6 +207,31 @@ async def update_settings(body: SettingsUpdate):
             pass
     return {"ok": True}
 
+# ── AI 入戏守则（可运行时编辑，无需重启后端）───────
+@router.get("/api/settings/immersion-guide")
+async def get_immersion_guide():
+    from immersion_prompts import IMMERSION_GUIDE_TEMPLATE
+    return {
+        "text": SETTINGS.get("immersion_guide") or IMMERSION_GUIDE_TEMPLATE,
+        "default": IMMERSION_GUIDE_TEMPLATE,
+    }
+
+
+class ImmersionGuideUpdate(BaseModel):
+    text: str = ""
+
+
+@router.put("/api/settings/immersion-guide")
+async def update_immersion_guide(body: ImmersionGuideUpdate):
+    text = (body.text or "").strip()
+    if not text:
+        SETTINGS.pop("immersion_guide", None)
+    else:
+        SETTINGS["immersion_guide"] = text[:8000]
+    save_settings(SETTINGS)
+    return {"ok": True}
+
+
 # ── AI 发表情包开关 ─────────────────────────────
 class AiStickersToggle(BaseModel):
     enabled: bool

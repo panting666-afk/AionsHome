@@ -67,9 +67,17 @@ _SYSTEM_MSG_CONTEXT_KEYWORDS = ('查看了监控', '搜索了', '点歌', '点�
 def _immersion_guide(ai_name: str) -> str:
     """入戏守则：让 AI 把设定当作真实身份，不确认、不出戏、像真人一样自然说话。
 
-    文本可在 immersion_prompts.py 里自行编辑。
+    文本可在设置页「AI 入戏守则」里直接编辑（立即生效，无需重启）；
+    没编辑过时用 immersion_prompts.py 里的默认模板。
     """
-    return IMMERSION_GUIDE_TEMPLATE.format(ai_name=ai_name)
+    text = (SETTINGS.get("immersion_guide") or "").strip()
+    if not text:
+        text = IMMERSION_GUIDE_TEMPLATE
+    try:
+        return text.format(ai_name=ai_name)
+    except (KeyError, ValueError):
+        # 手动编辑时删掉了 {ai_name} 占位符 → 原样返回，不崩
+        return text
 
 
 def _build_persona_prefix(wb, ai_name: str, user_name: str) -> list:
