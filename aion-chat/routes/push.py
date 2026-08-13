@@ -90,7 +90,8 @@ def send_web_push(title: str, body: str, data: dict | None = None, timeout: floa
         return 0
     try:
         from pywebpush import WebPushException, webpush
-    except Exception:
+    except Exception as e:
+        print(f"[push] pywebpush 不可用，推送已跳过（请确认已安装 pywebpush）：{e}")
         return 0
     payload = json.dumps({"title": title, "body": body, "data": data or {}}, ensure_ascii=False)
     vapid_key = keys.get("private_raw_b64") or keys.get("private_pem")
@@ -109,8 +110,10 @@ def send_web_push(title: str, body: str, data: dict | None = None, timeout: floa
         except WebPushException as e:
             if e.response is not None and e.response.status_code in (404, 410):
                 stale.append(sub)
-        except Exception:
-            pass
+            else:
+                print(f"[push] 发送失败（{e.response.status_code if e.response else e.errno}）: {str(e)[:200]}")
+        except Exception as e:
+            print(f"[push] 发送异常: {str(e)[:200]}")
     if stale:
         _save_subs([s for s in subs if s not in stale])
     return sent

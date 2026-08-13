@@ -20,3 +20,7 @@ akshare
 chinese-calendar
 mcp
 cryptography
+# Web Push（PWA 系统级推送），缺了推送会静默失败
+pywebpush==2.3.0
+http-ece==1.2.1
+py-vapid==1.9.4
