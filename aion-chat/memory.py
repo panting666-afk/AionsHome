@@ -296,28 +296,27 @@ async def get_embedding(text: str) -> list[float] | None:
     if cached:
         return list(cached)
     if ecfg["use_openai"]:
-        # OpenAI 兼容格式（硅基流动等）。接口偶尔慢/限流，超时放大 + 失败自动重试一次。
+        # OpenAI 兼容格式（硅基流动等）。免费模型偶发限流/慢响应，最多重试 3 次 + 指数退避。
         url = f"{ecfg['base_url']}/v1/embeddings"
         headers = {"Authorization": f"Bearer {ecfg['api_key']}", "Content-Type": "application/json"}
         body = {"model": ecfg["model"], "input": text}
-        for attempt in range(2):
+        for attempt in range(4):
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
                     resp = await client.post(url, json=body, headers=headers)
                     if resp.status_code == 429 or resp.status_code >= 500:
-                        print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}（第 {attempt + 1} 次）")
-                        await asyncio.sleep(1.0)
+                        backoff = min(1.5 * (2 ** attempt), 10)
+                        print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}，{backoff:.0f}s 后重试（第 {attempt + 1}/4 次）")
+                        await asyncio.sleep(backoff)
                         continue
                     if resp.status_code != 200:
                         print(f"[Embedding] OpenAI 兼容调用失败 {resp.status_code}: {resp.text[:300]}")
                         return None
                     return _cache_embedding(cache_key, resp.json()["data"][0]["embedding"])
             except Exception as e:
-                print(f"[Embedding] 调用异常: {e}（第 {attempt + 1} 次）")
-                if attempt == 0:
-                    await asyncio.sleep(1.0)
-                    continue
-                return None
+                backoff = min(1.5 * (2 ** attempt), 10)
+                print(f"[Embedding] 调用异常: {e}，{backoff:.0f}s 后重试（第 {attempt + 1}/4 次）")
+                await asyncio.sleep(backoff)
         return None
     else:
         # Gemini 原生格式
@@ -667,7 +666,6 @@ async def _call_sentinel_text(scfg: dict, prompt: str, timeout: int = 60) -> str
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
             "max_tokens": 4096,
-            "enable_thinking": False,
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
@@ -706,7 +704,6 @@ async def _call_sentinel_vision(scfg: dict, prompt: str, img_b64: str, mime_type
             ]}],
             "temperature": 0.3,
             "max_tokens": 4096,
-            "enable_thinking": False,
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
@@ -896,7 +893,7 @@ async def instant_digest(
     )
 
     try:
-        raw = await _call_sentinel_text(scfg, prompt, timeout=15)
+        raw = await _call_sentinel_text(scfg, prompt, timeout=30)
         if not raw:
             return {
                 "is_search_needed": False, "keywords": [], "require_detail": False,
@@ -950,7 +947,8 @@ async def instant_digest(
             "topic": topic,
             "first_responder": first_responder,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[InstantDigest] 哨兵调用失败，关键词/话题置空: {type(e).__name__}: {str(e)[:200]}")
         return {
             "is_search_needed": False, "keywords": [], "require_detail": False,
             "status": "", "topic": "", "first_responder": "random",
@@ -2899,6 +2897,7 @@ async def rebuild_embeddings() -> dict:
                 success += 1
             else:
                 failed += 1
+            _REBUILD_STATE.update(success=success, failed=failed, total=total)
             if success % 5 == 0:
                 await db.commit()
                 await asyncio.sleep(0.3)
@@ -2918,6 +2917,7 @@ async def rebuild_embeddings() -> dict:
                     success += 1
                 else:
                     failed += 1
+                _REBUILD_STATE.update(success=success, failed=failed, total=total)
                 if success % 5 == 0:
                     await db.commit()
                     await asyncio.sleep(0.3)
@@ -2925,4 +2925,38 @@ async def rebuild_embeddings() -> dict:
         except Exception:
             pass  # 聊天室记忆表可能不存在
     print(f"[Memory] 向量索引重建完成: {success}/{total} 成功, {failed} 失败")
+    _REBUILD_STATE.update(success=success, failed=failed, total=total)
     return {"total": total, "success": success, "failed": failed}
+
+
+# ── 向量重建后台任务：同步接口 15s 超时会掐断重建，改为后台执行 + 进度轮询 ──
+_REBUILD_STATE: dict = {
+    "running": False, "done": False, "total": 0, "success": 0, "failed": 0,
+    "error": "", "started_at": 0.0,
+}
+
+
+async def _run_rebuild_background():
+    try:
+        await rebuild_embeddings()
+    except Exception as e:
+        _REBUILD_STATE["error"] = str(e)[:300]
+        print(f"[Memory] 重建任务异常: {e}")
+    finally:
+        _REBUILD_STATE.update(running=False, done=True)
+
+
+def start_rebuild_embeddings() -> dict:
+    """启动后台重建任务，立即返回，不阻塞 HTTP 响应。"""
+    if _REBUILD_STATE["running"]:
+        return {"ok": False, "message": "重建任务已在运行，请稍候", "state": get_rebuild_status()}
+    _REBUILD_STATE.update(
+        running=True, done=False, total=0, success=0, failed=0, error="",
+        started_at=time.time(),
+    )
+    asyncio.create_task(_run_rebuild_background())
+    return {"ok": True, "message": "重建已开始，可在页面查看进度", "state": get_rebuild_status()}
+
+
+def get_rebuild_status() -> dict:
+    return dict(_REBUILD_STATE)

@@ -1119,18 +1119,42 @@ async function rebuildEmbeddings() {
   btn.textContent = "⏳ 重建中...";
   statusEl.style.display = "block";
   statusEl.className = "digest-status info";
-  statusEl.textContent = "正在重建向量索引，请稍候...";
+  statusEl.textContent = "正在启动向量索引重建...";
   try {
-    const result = await api("POST", "/api/memories/rebuild-embeddings");
-    statusEl.className = "digest-status success";
-    statusEl.textContent = `向量索引重建完成：${result.success}/${result.total} 条成功` + (result.failed > 0 ? `，${result.failed} 条失败` : "");
+    const start = await api("POST", "/api/memories/rebuild-embeddings");
+    if (!start.ok) {
+      statusEl.className = "digest-status error";
+      statusEl.textContent = start.message || "重建已在进行中";
+      return;
+    }
+    // 后台重建：轮询进度，避免前端 15s 超时掐断
+    const timer = setInterval(async () => {
+      try {
+        const st = await api("GET", "/api/memories/rebuild-status");
+        if (st.total > 0) {
+          statusEl.className = "digest-status info";
+          statusEl.textContent = `正在重建向量索引：${st.success}/${st.total} 条成功` + (st.failed > 0 ? `，${st.failed} 条失败` : "") + "…";
+        }
+        if (st.done) {
+          clearInterval(timer);
+          if (st.error) {
+            statusEl.className = "digest-status error";
+            statusEl.textContent = "重建失败：" + st.error;
+          } else {
+            statusEl.className = "digest-status success";
+            statusEl.textContent = `向量索引重建完成：${st.success}/${st.total} 条成功` + (st.failed > 0 ? `，${st.failed} 条失败` : "");
+          }
+        }
+      } catch(e) {
+        // 轮询失败先忽略，下一轮再试
+      }
+    }, 2000);
   } catch(e) {
     statusEl.className = "digest-status error";
-    statusEl.textContent = "重建失败：" + (e.message || "未知错误");
+    statusEl.textContent = "重建启动失败：" + (e.message || "未知错误");
   } finally {
     btn.disabled = false;
     btn.textContent = "🔄 重建向量索引";
-    setTimeout(() => { statusEl.style.display = "none"; }, 8000);
   }
 }
 

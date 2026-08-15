@@ -15,6 +15,7 @@ from config import load_digest_anchor, load_worldbook, save_digest_anchor
 from database import get_db
 from memory import (
     _pack_embedding, get_embedding, manual_digest, rebuild_embeddings,
+    start_rebuild_embeddings, get_rebuild_status,
     memory_kind_for_type, memory_kind_label, generate_daily_compression_draft,
     get_latest_daily_compression_review, apply_daily_compression_review,
     discard_daily_compression_review, update_daily_compression_review, _memory_time_payload,
@@ -539,7 +540,13 @@ async def calendar_compression_job_status(job_id: str):
 
 @router.post("/api/memories/rebuild-embeddings")
 async def trigger_rebuild_embeddings():
-    return await rebuild_embeddings()
+    """启动后台重建任务（同步 15s 超时会掐断，改为后台执行+轮询）。"""
+    return start_rebuild_embeddings()
+
+
+@router.get("/api/memories/rebuild-status")
+async def rebuild_embeddings_status():
+    return get_rebuild_status()
 
 
 @router.get("/api/memories/digest/anchor")
