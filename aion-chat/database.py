@@ -344,6 +344,19 @@ async def init_db():
         """)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_diary_entries_created ON diary_entries(created_at DESC)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_diary_entries_author ON diary_entries(author, created_at DESC)")
+        # ── 个人随手笔记 ──
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                title TEXT DEFAULT '',
+                content TEXT NOT NULL,
+                attachments TEXT DEFAULT '[]',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)")
         # ── 书籍表 ──
         await db.execute("""
             CREATE TABLE IF NOT EXISTS books (

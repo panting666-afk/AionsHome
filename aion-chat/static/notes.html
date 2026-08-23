@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="aion-app">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>笔记</title>
+<link rel="stylesheet" href="/static/common.css">
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ff8359">
+<style>
+  /* ── 笔记 App 特有样式 ── */
+  .notes-search-bar {
+    display: flex;
+    padding: 10px 16px;
+    gap: 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .notes-search-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 6px 14px;
+    font-size: 13px;
+    outline: none;
+  }
+  .notes-search-input:focus {
+    border-color: var(--accent);
+  }
+
+  .notes-list {
+    flex: 1;
+    overflow-y: auto;
+    max-height: calc(100vh - 120px);
+    padding: 14px 16px;
+    scrollbar-width: none;
+  }
+  .notes-list::-webkit-scrollbar { display: none; }
+
+  .notes-empty {
+    padding: 64px 16px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  .note-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .note-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    border-color: var(--border-strong);
+  }
+  body[data-theme="dark"] .note-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+
+  .note-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    padding-right: 56px; /* 避开右侧操作按钮空间 */
+  }
+  .note-title {
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 700;
+    line-height: 1.35;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
+  .note-time-row {
+    font-size: 11px;
+    color: var(--text3);
+    margin-bottom: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .note-time-label {
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .note-content-preview {
+    font-size: 14px;
+    color: var(--text2);
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+  .note-card.expanded .note-content-preview {
+    display: block;
+    -webkit-line-clamp: unset;
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  /* 图片附件网格 */
+  .note-images-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .note-images-grid.one {
+    grid-template-columns: 1fr;
+    max-width: 240px;
+  }
+  .note-images-grid.two {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .note-img-wrapper {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .note-images-grid.one .note-img-wrapper {
+    aspect-ratio: unset;
+    max-height: 200px;
+  }
+  .note-img-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    cursor: zoom-in;
+    transition: transform 0.2s;
+  }
+  .note-img-wrapper img:hover {
+    transform: scale(1.03);
+  }
+
+  /* 卡片动作栏 */
+  .note-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 5;
+  }
+  .note-card:hover .note-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .note-action-btn {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 0;
+  }
+  .note-action-btn:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .note-action-btn.danger:hover {
+    color: var(--danger);
+    background: rgba(207, 34, 46, 0.08);
+  }
+
+  @media (max-width: 768px) {
+    .note-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  /* 模态弹窗 */
+  .notes-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .notes-overlay.show {
+    display: flex;
+  }
+  .notes-modal {
+    width: 100%;
+    max-width: 540px;
+    background: var(--surface);
+    border-radius: 18px 18px 0 0;
+    padding: 18px 18px max(18px, env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.18);
+    transform: translateY(100%);
+    transition: transform 0.25s cubic-bezier(0.1, 0.76, 0.55, 0.94);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+  }
+  .notes-overlay.show .notes-modal {
+    transform: translateY(0);
+  }
+  .notes-modal-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .notes-modal-close {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+  }
+
+  .notes-form-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .notes-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 12px;
+    font-family: inherit;
+  }
+  .notes-input:focus {
+    border-color: var(--accent);
+  }
+  .notes-textarea {
+    min-height: 180px;
+    resize: vertical;
+    line-height: 1.6;
+  }
+
+  /* 图片上传和预览区 */
+  .upload-area {
+    margin-bottom: 16px;
+  }
+  .upload-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .upload-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+  .upload-add-btn {
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .upload-add-btn:hover {
+    border-color: var(--accent);
+  }
+  .upload-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .upload-preview-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .upload-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .upload-preview-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .notes-save-btn {
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .notes-save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .notes-load-more {
+    display: block;
+    margin: 12px auto 24px;
+    padding: 8px 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text2);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .notes-stats {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text3);
+    padding: 8px 0;
+  }
+
+  .notes-add-bar-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 图片放大蒙层 */
+  .gallery-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .gallery-overlay.show {
+    display: flex;
+  }
+  .gallery-img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+
+  /* 适配 dark theme 背景 */
+  body[data-theme="dark"]::before {
+    background-image: url('/public/chat-bg-dark.jpg');
+  }
+  body[data-theme="light"]::before {
+    background-image: url('/public/chat-bg-light.jpg');
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -3;
+    background-position: center;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+  body {
+    background-color: var(--bg);
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="sub-page">
+  <!-- 顶部导航 -->
+  <div class="top-bar">
+    <button class="back-btn" onclick="goHome()" title="返回桌面">◀</button>
+    <h2>随手笔记</h2>
+    <button class="notes-add-bar-btn" onclick="openNewModal()" title="新建笔记">+</button>
+  </div>
+
+  <!-- 搜索栏 -->
+  <div class="notes-search-bar">
+    <input type="search" class="notes-search-input" id="searchInput" placeholder="搜索标题或内容关键词..." oninput="handleSearch(this.value)">
+  </div>
+
+  <!-- 笔记卡片列表 -->
+  <div class="notes-list" id="notesList">
+    <div class="notes-empty">📝 还没有笔记记录哦<br>点击右上角“+”号添加第一条笔记吧！</div>
+  </div>
+</div>
+
+<!-- 新建/编辑笔记弹窗 -->
+<div class="notes-overlay" id="notesOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="notes-modal">
+    <div class="notes-modal-title">
+      <span id="modalTitle">新建笔记</span>
+      <button class="notes-modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="notes-form-body">
+      <input type="text" class="notes-input" id="noteTitleInput" maxlength="100" placeholder="为笔记起个标题（选填）...">
+      <textarea class="notes-input notes-textarea" id="noteContentInput" placeholder="写下你的小知识或备忘内容..."></textarea>
+
+      <!-- 图片附件上传区 -->
+      <div class="upload-area">
+        <div class="upload-head">
+          <span class="upload-title">图片附件 (<span id="uploadCount">0</span>张)</span>
+          <button class="upload-add-btn" type="button" onclick="document.getElementById('fileInput').click()">选择图片</button>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleImageUpload(this)">
+        <div class="upload-preview-grid" id="uploadPreviewGrid"></div>
+      </div>
+    </div>
+    <button class="notes-save-btn" id="saveBtn" onclick="saveNote()">保存笔记</button>
+  </div>
+</div>
+
+<!-- 图片全屏查看 -->
+<div class="gallery-overlay" id="galleryOverlay" onclick="closeGallery()">
+  <img src="" alt="预览大图" class="gallery-img" id="galleryImg">
+</div>
+
+<script src="/static/theme.js?v=theme-20260606"></script>
+<script src="/static/common.js"></script>
+<script>
+  let allNotes = [];
+  let currentPage = 1;
+  let totalNotes = 0;
+  let hasMoreNotes = false;
+  let currentSearchKeyword = "";
+  let loadingNotes = false;
+  let editingNoteId = null;
+  let pendingAttachments = [];
+
+  // 初始化
+  window.addEventListener('DOMContentLoaded', () => {
+    // 设置主题
+    const activeTheme = localStorage.getItem('aion_chat_theme') || 'light';
+    document.body.dataset.theme = activeTheme;
+    document.documentElement.dataset.theme = activeTheme;
+
+    loadNotes(1, false);
+  });
+
+  // 加载列表
+  async function loadNotes(page = 1, append = false) {
+    if (loadingNotes) return;
+    loadingNotes = true;
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: '30',
+        keyword: currentSearchKeyword
+      });
+      const res = await api('GET', `/api/notes?${params}`);
+      totalNotes = res.total;
+      hasMoreNotes = !!res.has_more;
+      currentPage = page;
+
+      if (append) {
+        // 去重合并
+        const existingIds = new Set(allNotes.map(n => n.id));
+        for (const item of res.items || []) {
+          if (!existingIds.has(item.id)) {
+            allNotes.push(item);
+          }
+        }
+      } else {
+        allNotes = res.items || [];
+      }
+
+      renderList();
+    } catch (e) {
+      console.error('加载笔记失败:', e);
+      showToast('加载笔记失败');
+    } finally {
+      loadingNotes = false;
+    }
+  }
+
+  // 渲染列表
+  function renderList() {
+    const container = document.getElementById('notesList');
+    if (!allNotes.length) {
+      container.innerHTML = `<div class="notes-empty">📝 ${currentSearchKeyword ? '无匹配检索词的笔记' : '还没有笔记记录哦'}<br>${currentSearchKeyword ? '换个词搜搜看' : '点击右上角“+”号添加第一条笔记吧！'}</div>`;
+      return;
+    }
+
+    let html = '';
+    for (const note of allNotes) {
+      const createdStr = formatTime(note.created_at);
+      const updatedStr = formatTime(note.updated_at);
+      const isModified = Math.abs(note.updated_at - note.created_at) > 2; // 大于2秒才展示修改时间
+
+      let timeHtml = `<span class="note-time-label">创建：${createdStr}</span>`;
+      if (isModified) {
+        timeHtml += `<span class="note-time-label">修改：${updatedStr}</span>`;
+      }
+
+      // 卡片内的图片附件
+      let imagesHtml = '';
+      if (note.attachments && note.attachments.length) {
+        const len = note.attachments.length;
+        const gridCls = len === 1 ? 'one' : (len === 2 ? 'two' : '');
+        imagesHtml = `<div class="note-images-grid ${gridCls}">`;
+        for (const imgUrl of note.attachments) {
+          imagesHtml += `
+            <div class="note-img-wrapper" onclick="event.stopPropagation(); openGallery('${escapeHtml(imgUrl)}')">
+              <img src="${escapeHtml(imgUrl)}" alt="图片" loading="lazy">
+            </div>
+          `;
+        }
+        imagesHtml += `</div>`;
+      }
+
+      const displayTitle = note.title ? escapeHtml(note.title) : '无标题笔记';
+      const titleClass = note.title ? '' : 'style="opacity:0.65;font-weight:500;"';
+
+      html += `
+        <div class="note-card" id="card-${note.id}" onclick="toggleExpand('${note.id}')">
+          <!-- 动作栏 -->
+          <div class="note-actions">
+            <button class="note-action-btn" onclick="event.stopPropagation(); openEditModal('${note.id}')" title="编辑">✏️</button>
+            <button class="note-action-btn danger" onclick="event.stopPropagation(); deleteNote('${note.id}')" title="删除">🗑️</button>
+          </div>
+
+          <div class="note-head">
+            <div class="note-title" ${titleClass}>${displayTitle}</div>
+          </div>
+          <div class="note-time-row">
+            ${timeHtml}
+          </div>
+          <div class="note-content-preview">${escapeHtml(note.content)}</div>
+          ${imagesHtml}
+        </div>
+      `;
+    }
+
+    html += `<div class="notes-stats">共 ${totalNotes} 条笔记</div>`;
+    if (hasMoreNotes) {
+      html += `<button class="notes-load-more" onclick="loadNotes(${currentPage + 1}, true)">加载更多</button>`;
+    }
+
+    container.innerHTML = html;
+  }
+
+  // 卡片展开/折叠
+  function toggleExpand(noteId) {
+    const card = document.getElementById(`card-${noteId}`);
+    if (card) {
+      card.classList.toggle('expanded');
+    }
+  }
+
+  // 搜索防抖
+  let searchTimer = null;
+  function handleSearch(keyword) {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      currentSearchKeyword = keyword.trim();
+      loadNotes(1, false);
+    }, 300);
+  }
+
+  // 打开新建弹窗
+  function openNewModal() {
+    editingNoteId = null;
+    pendingAttachments = [];
+    document.getElementById('modalTitle').textContent = '新建笔记';
+    document.getElementById('noteTitleInput').value = '';
+    document.getElementById('noteContentInput').value = '';
+    renderUploadPreview();
+    openModalOverlay();
+  }
+
+  // 打开编辑弹窗
+  function openEditModal(noteId) {
+    const note = allNotes.find(n => n.id === noteId);
+    if (!note) return;
+
+    editingNoteId = noteId;
+    pendingAttachments = [...(note.attachments || [])];
+    document.getElementById('modalTitle').textContent = '编辑笔记';
+    document.getElementById('noteTitleInput').value = note.title || '';
+    document.getElementById('noteContentInput').value = note.content || '';
+    renderUploadPreview();
+    openModalOverlay();
+  }
+
+  function openModalOverlay() {
+    const overlay = document.getElementById('notesOverlay');
+    overlay.style.display = 'flex';
+    // 强制触发 reflow 以便过渡生效
+    overlay.offsetHeight;
+    overlay.classList.add('show');
+  }
+
+  function closeModal() {
+    const overlay = document.getElementById('notesOverlay');
+    overlay.classList.remove('show');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 250);
+  }
+
+  // 图片上传逻辑
+  async function handleImageUpload(input) {
+    const files = Array.from(input.files || []);
+    input.value = '';
+    if (!files.length) return;
+
+    const saveBtn = document.getElementById('saveBtn');
+    const origText = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = '图片附件上传中...';
+
+    try {
+      for (const file of files) {
+        if (!file.type || !file.type.startsWith('image/')) continue;
+        const fd = new FormData();
+        fd.append('file', file);
+
+        // 直接复用主工程的 /api/upload 接口
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: fd
+        });
+        const data = await res.json();
+        if (data && data.url) {
+          pendingAttachments.push(data.url);
+        } else if (data && data.error) {
+          showToast(data.error);
+        }
+      }
+      renderUploadPreview();
+    } catch (e) {
+      console.error(e);
+      showToast('图片上传失败');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = origText;
+    }
+  }
+
+  // 渲染上传预览图
+  function renderUploadPreview() {
+    const grid = document.getElementById('uploadPreviewGrid');
+    document.getElementById('uploadCount').textContent = pendingAttachments.length;
+
+    if (!pendingAttachments.length) {
+      grid.innerHTML = '';
+      return;
+    }
+
+    grid.innerHTML = pendingAttachments.map((url, idx) => `
+      <div class="upload-preview-item">
+        <img src="${escapeHtml(url)}" alt="预览">
+        <button class="upload-preview-remove" onclick="removeAttachment(${idx})" type="button">×</button>
+      </div>
+    `).join('');
+  }
+
+  // 移除待保存附件
+  function removeAttachment(idx) {
+    pendingAttachments.splice(idx, 1);
+    renderUploadPreview();
+  }
+
+  // 保存笔记
+  async function saveNote() {
+    const content = document.getElementById('noteContentInput').value.trim();
+    if (!content) {
+      showToast('请输入笔记内容');
+      return;
+    }
+
+    const title = document.getElementById('noteTitleInput').value.trim();
+    const body = {
+      title: title,
+      content: content,
+      attachments: pendingAttachments
+    };
+
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+
+    try {
+      let res;
+      if (editingNoteId) {
+        // 编辑
+        res = await api('PUT', `/api/notes/${editingNoteId}`, body);
+      } else {
+        // 新增
+        res = await api('POST', '/api/notes', body);
+      }
+
+      if (res && res.ok !== false) {
+        showToast('保存成功');
+        closeModal();
+        loadNotes(1, false);
+      } else {
+        showToast(res.error || '保存失败');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('连接服务器失败');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存笔记';
+    }
+  }
+
+  // 删除笔记
+  async function deleteNote(noteId) {
+    if (!confirm('确定要彻底删除这条笔记吗？此操作无法撤销。')) return;
+
+    try {
+      const res = await api('DELETE', `/api/notes/${noteId}`);
+      if (res && res.ok !== false) {
+        showToast('已成功删除笔记');
+        // 本地移除该卡片，避免整页重新拉取跳动
+        allNotes = allNotes.filter(n => n.id !== noteId);
+        totalNotes = Math.max(0, totalNotes - 1);
+        renderList();
+      } else {
+        showToast(res.error || '删除失败');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('删除失败，请重试');
+    }
+  }
+
+  // 图片放大查看
+  function openGallery(url) {
+    const overlay = document.getElementById('galleryOverlay');
+    const img = document.getElementById('galleryImg');
+    img.src = url;
+    overlay.style.display = 'flex';
+    // 触发过渡
+    overlay.offsetHeight;
+    overlay.classList.add('show');
+  }
+
+  function closeGallery() {
+    const overlay = document.getElementById('galleryOverlay');
+    overlay.classList.remove('show');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 200);
+  }
+
+  // 格式化时间戳
+  function formatTime(ts) {
+    if (!ts) return '';
+    const date = new Date(ts * 1000);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${d} ${h}:${min}`;
+  }
+
+  function escapeHtml(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  // 返回主页
+  function goHome() {
+    if (window.parent !== window && typeof window.parent.closeActiveApp === 'function') {
+      window.parent.closeActiveApp();
+    } else {
+      window.location.href = '/';
+    }
+  }
+</script>
+</body>
+</html>

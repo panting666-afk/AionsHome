@@ -31,7 +31,7 @@ from camera import cam
 from voice import voice
 from schedule import schedule_mgr
 
-from routes import chat, cam as cam_routes, files, settings, memories, stickers as stickers_routes, push as push_routes
+from routes import chat, cam as cam_routes, files, settings, memories, stickers as stickers_routes, push as push_routes, notes as notes_routes
 from routes import voice as voice_routes
 from routes import music as music_routes
 from routes import schedule as schedule_routes
@@ -365,6 +365,7 @@ app.include_router(homecoming_routes.router)
 app.include_router(lounge_friends_routes.router)
 get_bridge_token()
 app.include_router(lounge_context_bridge_routes.router)
+app.include_router(notes_routes.router)
 app.include_router(create_security_access_router(security_access_service))
 app.include_router(create_security_access_report_router(DATA_DIR / "security_access", BASE_DIR / "security-access-report.html"))
 
@@ -445,6 +446,10 @@ async def moments_page():
 @app.get("/diary")
 async def diary_page():
     return FileResponse(BASE_DIR / "static" / "diary.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+@app.get("/notes")
+async def notes_page():
+    return FileResponse(BASE_DIR / "static" / "notes.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/activity-logs")
 async def activity_logs_page():

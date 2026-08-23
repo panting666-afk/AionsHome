@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <defs>
+    <!-- 背景渐变，温暖明亮的奶油纸张质感 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff5ec"/>
+      <stop offset="100%" stop-color="#ffe3cf"/>
+    </linearGradient>
+    <!-- 纸面渐变 -->
+    <linearGradient id="paperGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#fffcf9"/>
+    </linearGradient>
+    <!-- 钢笔渐变 -->
+    <linearGradient id="penGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b09cff"/>
+      <stop offset="100%" stop-color="#7867ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <!-- 圆角外壳背景 -->
+  <rect width="120" height="120" rx="28" fill="url(#bgGrad)"/>
+
+  <!-- 笔记本卡片主体 -->
+  <g filter="url(#shadow)">
+    <!-- 笔记本皮面/封底 -->
+    <rect x="26" y="24" width="68" height="72" rx="6" fill="#8e6cff"/>
+    <!-- 笔记本内页纸张 -->
+    <rect x="30" y="26" width="62" height="68" rx="3" fill="url(#paperGrad)"/>
+  </g>
+
+  <!-- 笔记本上的横线 -->
+  <line x1="38" y1="38" x2="82" y2="38" stroke="#eadaff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="38" y1="48" x2="82" y2="48" stroke="#eadaff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="38" y1="58" x2="82" y2="58" stroke="#eadaff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="38" y1="68" x2="74" y2="68" stroke="#eadaff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="38" y1="78" x2="64" y2="78" stroke="#eadaff" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- 左侧螺旋装订线圈 -->
+  <circle cx="26" cy="34" r="3" fill="#ffe3cf"/>
+  <path d="M 23 34 C 20 34, 20 38, 26 38" fill="none" stroke="#7867ff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="26" cy="48" r="3" fill="#ffe3cf"/>
+  <path d="M 23 48 C 20 48, 20 52, 26 52" fill="none" stroke="#7867ff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="26" cy="62" r="3" fill="#ffe3cf"/>
+  <path d="M 23 62 C 20 62, 20 66, 26 66" fill="none" stroke="#7867ff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="26" cy="76" r="3" fill="#ffe3cf"/>
+  <path d="M 23 76 C 20 76, 20 80, 26 80" fill="none" stroke="#7867ff" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- 斜靠的钢笔 -->
+  <g filter="url(#shadow)">
+    <!-- 钢笔身 -->
+    <path d="M 88 40 L 70 85 C 69 88, 66 89, 64 87 C 62 85, 63 82, 65 79 L 83 34 Z" fill="url(#penGrad)"/>
+    <!-- 笔尖 (金属色) -->
+    <path d="M 64.5 86.5 L 61 92 L 66 89 Z" fill="#ffd700"/>
+    <!-- 笔夹 (金色装饰) -->
+    <path d="M 83 34 L 85 39" stroke="#ffd700" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>
